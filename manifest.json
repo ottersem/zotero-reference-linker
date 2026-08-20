@@ -1,0 +1,14 @@
+{
+  "manifest_version": 2,
+  "name": "Reference Linker",
+  "version": "0.2.1",
+  "description": "Highlights references whose papers are already in your Zotero library.",
+  "author": "Reference Linker contributors",
+  "applications": {
+    "zotero": {
+      "id": "reference-linker@local.invalid",
+      "strict_min_version": "9.0",
+      "strict_max_version": "10.99.99"
+    }
+  }
+}
