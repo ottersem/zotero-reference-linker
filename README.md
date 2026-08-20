@@ -13,6 +13,18 @@ The highlights are part of the reader UI. They do not modify the PDF or create Z
 
 Zotero 9 and 10 are supported.
 
+## npm package
+
+The project is also available on npm:
+
+```bash
+npm install zotero-reference-linker
+```
+
+The npm package contains the unpacked extension in `node_modules/zotero-reference-linker/build/`. It is intended for development, automated builds, and downstream packaging. For normal Zotero installation, use the XPI from [GitHub Releases](https://github.com/ottersem/zotero-reference-linker/releases/latest) instead.
+
+Package page: [npmjs.com/package/zotero-reference-linker](https://www.npmjs.com/package/zotero-reference-linker)
+
 ## Use
 
 Open a PDF, go to its references pages, and click **Ref ↗** in the reader toolbar. References found in your library are highlighted in yellow.
@@ -56,6 +68,15 @@ npm test
 npm run build
 npm run clean
 ```
+
+Before publishing a new npm version, inspect the package contents:
+
+```bash
+npm pack --dry-run
+npm publish
+```
+
+The `prepack` script runs the full verification step automatically. npm versions cannot be overwritten, so update both `package.json` and `manifest.json` before publishing a new release.
 
 ## Source layout
 
