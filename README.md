@@ -1,177 +1,95 @@
 # Zotero Reference Linker
 
-> Automatically highlight references that already exist in your Zotero library and open the linked paper or PDF with one click.
+Reference Linker marks papers in a PDF's bibliography when the same paper is already in your Zotero library. Clicking the highlight opens the saved PDF, or selects the library item when no PDF is attached.
 
-![Zotero](https://img.shields.io/badge/Zotero-9%20%7C%2010-CC2936?logo=zotero&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
-![Version](https://img.shields.io/badge/version-0.8.1-blue)
+The highlights are part of the reader UI. They do not modify the PDF or create Zotero annotations.
 
-## Overview
+## Install
 
-Zotero Reference Linker scans the **References**, **Bibliography**, or **Works Cited** section of the PDF currently open in Zotero Reader. It compares each citation with papers stored in the active Zotero library and adds a temporary yellow overlay to matching references.
+1. Download `zotero-reference-linker-0.8.2.xpi`.
+2. In Zotero, open **Tools → Plugins**.
+3. From the gear menu, choose **Install Plugin From File…**.
+4. Select the XPI and restart Zotero.
 
-- Click `↗ PDF` to open the matched PDF attachment.
-- Click `↗ Item` to select the matched Zotero item.
-- Click highlighted reference text to open it directly.
-- The original PDF and Zotero annotations are never modified.
+Zotero 9 and 10 are supported.
 
-## Features
+## Use
 
-- Automatic References-section detection using Zotero's PDF structure
-- Full-document heading scan when structured section data is unavailable
-- Numbered references such as `[12]` or `12.`
-- Unnumbered author–year bibliographies used by AAAI, ICML, and similar venues
-- Multi-column PDF text layers
-- Line-end hyphenation such as `seg- mentation`
-- DOI and arXiv ID exact matching
-- Normalized title exact and fuzzy matching
-- Clickable, non-destructive Reader overlays
-- Cached library and rendered-page indexes for efficient rescanning
-- Zotero 9 and Zotero 10 support
+Open a PDF, go to its references pages, and click **Ref ↗** in the reader toolbar. References found in your library are highlighted in yellow.
 
-## Installation
+- `↗ PDF` opens the saved PDF attachment.
+- `↗ Item` selects the parent item in Zotero.
+- Clicking the highlighted text does the same thing as clicking its badge.
 
-1. Download `zotero-reference-linker-0.8.1.xpi`.
-2. Open Zotero.
-3. Go to **Tools → Plugins**.
-4. Open the gear menu and select **Install Plugin From File…**.
-5. Select the downloaded XPI file.
-6. Restart Zotero.
+Zotero only keeps nearby PDF pages rendered. If nothing appears, scroll through the references pages once and run the scan again.
 
-## Usage
+## Matching
 
-1. Open a PDF in Zotero Reader.
-2. Navigate to the References or Bibliography pages.
-3. Click **Ref ↗** in the Reader toolbar.
-4. Click a yellow highlight, `↗ PDF`, or `↗ Item` to open the matched entry.
+The plugin looks for matches in this order:
 
-The toolbar briefly displays the number of links actually rendered on the currently loaded reference pages.
+1. DOI
+2. arXiv ID
+3. Normalized title
+4. Fuzzy title match, using author and year as supporting metadata
 
-> [!NOTE]
-> Zotero virtualizes PDF pages. Reference pages must be visible or recently rendered before their overlays can appear.
+Both numbered references (`[12]`, `12.`) and author–year bibliographies are supported. Title matching ignores capitalization, punctuation, whitespace, and line-break hyphenation.
 
-## Matching Strategy
+## Build
 
-Matches are evaluated in the following order:
-
-1. Normalized DOI exact match
-2. Normalized arXiv ID exact match
-3. Normalized title exact match
-4. Fuzzy title similarity with year and first-author scoring
-
-For unnumbered bibliographies, indexed Zotero titles are compared directly with the rendered References text. PDF punctuation, capitalization, whitespace, Unicode variants, and line-end hyphenation are normalized before comparison.
-
-## Requirements
-
-### Runtime
-
-- Zotero 9.x or 10.x
-- A text-based PDF
-
-### Development
-
-- Node.js 20 or newer
-- npm
-
-## Build from Source
+Node.js 20 or newer is required.
 
 ```bash
 npm install
 npm run verify
 ```
 
-Generated files:
+`npm run verify` runs the type checker and tests, then creates:
 
-```text
-build/                                  Unpacked plugin
-zotero-reference-linker-0.8.1.xpi      Installable Zotero plugin
-```
+- `build/` — unpacked extension
+- `zotero-reference-linker-0.8.2.xpi` — installable package
 
-Available commands:
+Individual commands are also available:
 
 ```bash
-npm run typecheck   # Run TypeScript validation
-npm test            # Run the test suite
-npm run build       # Build and package the XPI
-npm run verify      # Typecheck, test, and build
-npm run clean       # Remove the unpacked build directory
+npm run typecheck
+npm test
+npm run build
+npm run clean
 ```
 
-## Project Structure
+## Source layout
 
 ```text
-zotero-reference-linker/
-├── bootstrap.js                 Zotero lifecycle bootstrap
-├── manifest.json                Zotero extension manifest
-├── scripts/
-│   ├── build.mjs                Bundle and XPI packaging
-│   └── clean.mjs                Build cleanup
-├── src/
-│   ├── index.ts                 Plugin entry point
-│   ├── core/
-│   │   ├── CitationParser.ts    Citation metadata extraction
-│   │   ├── LibraryMatcher.ts    Library index and matching
-│   │   ├── PdfSectionExtractor.ts
-│   │   ├── normalize.ts
-│   │   └── types.ts
-│   └── reader/
-│       ├── ReaderIntegration.ts Reader lifecycle and scanning
-│       └── ReferenceOverlay.ts  Highlights and navigation
-└── test/                        Vitest test suite
+bootstrap.js                   Zotero extension lifecycle
+manifest.json                  Extension metadata
+src/index.ts                   Entry point
+src/core/CitationParser.ts     Citation metadata parser
+src/core/LibraryMatcher.ts     Library index and matching
+src/core/PdfSectionExtractor.ts
+src/reader/ReaderIntegration.ts
+src/reader/ReferenceOverlay.ts
+test/                          Vitest tests
 ```
 
-## How It Works
+The section extractor first uses Zotero's PDF outline. When no references entry is available there, it searches the document for a References, Bibliography, or Works Cited heading. Appendix and supplementary-material headings are used as section boundaries.
 
-```text
-Open Zotero PDF
-       ↓
-Detect References section
-       ↓
-Extract numbered citations and rendered text
-       ↓
-Compare DOI, arXiv ID, and normalized titles
-       ↓
-Render temporary highlights and link badges
-       ↓
-Open the matched Zotero item or PDF
-```
+## Development install
 
-## Privacy and Data Safety
-
-- All matching runs locally inside Zotero.
-- The plugin does not upload PDFs, citations, or library metadata.
-- The original PDF is not edited.
-- No permanent Zotero annotations are created.
-
-## Known Limitations
-
-- Scanned or image-only PDFs require OCR before text can be detected.
-- Unusual text-layer ordering may affect complex multi-column layouts.
-- References split across non-contiguous pages may require those pages to be rendered.
-- Zotero Reader DOM selectors are internal and may require updates after future Zotero releases.
-
-## Development Installation
-
-Build the project, then create a text file named:
+After building, create this proxy file in the active Zotero profile:
 
 ```text
 extensions/reference-linker@local.invalid
 ```
 
-Place the absolute path to the generated `build/` directory inside that file and restart Zotero. The file must be created inside the active Zotero profile directory.
+Its contents should be the absolute path to the project's `build` directory. Restart Zotero after changing the build.
 
-## Contributing
+## Limitations
 
-Bug reports and pull requests are welcome. When reporting a PDF-specific issue, include:
+- Image-only PDFs need OCR.
+- Text extraction order depends on the PDF's text layer. Some complex layouts may not scan correctly.
+- Reference pages must be rendered in the reader before their highlights can be drawn.
+- Zotero Reader's internal DOM can change between releases.
 
-- Zotero version
-- Plugin version
-- Citation style or venue
-- Whether the PDF is text-based or scanned
-- A minimal example of the reference that failed
+## Reporting a problem
 
-Before submitting code, run:
-
-```bash
-npm run verify
-```
+Include the Zotero and plugin versions, the citation style, and one reference that failed to match. A link to the paper is useful when the PDF is public.
