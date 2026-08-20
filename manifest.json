@@ -1,12 +1,13 @@
 {
   "manifest_version": 2,
   "name": "Reference Linker",
-  "version": "0.2.1",
+  "version": "0.9.0",
   "description": "Highlights references whose papers are already in your Zotero library.",
-  "author": "Reference Linker contributors",
+  "author": "ottersem",
   "applications": {
     "zotero": {
-      "id": "reference-linker@local.invalid",
+      "id": "zotero-reference-linker@ottersem.github.io",
+      "update_url": "https://raw.githubusercontent.com/ottersem/zotero-reference-linker/main/updates.json",
       "strict_min_version": "9.0",
       "strict_max_version": "10.99.99"
     }

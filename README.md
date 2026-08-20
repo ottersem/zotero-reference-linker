@@ -6,7 +6,7 @@ The highlights are part of the reader UI. They do not modify the PDF or create Z
 
 ## Install
 
-1. Download `zotero-reference-linker-0.8.2.xpi`.
+1. Download the latest XPI from [GitHub Releases](https://github.com/ottersem/zotero-reference-linker/releases/latest).
 2. In Zotero, open **Tools → Plugins**.
 3. From the gear menu, choose **Install Plugin From File…**.
 4. Select the XPI and restart Zotero.
@@ -46,7 +46,7 @@ npm run verify
 `npm run verify` runs the type checker and tests, then creates:
 
 - `build/` — unpacked extension
-- `zotero-reference-linker-0.8.2.xpi` — installable package
+- `zotero-reference-linker-0.9.0.xpi` — installable package
 
 Individual commands are also available:
 
@@ -78,7 +78,7 @@ The section extractor first uses Zotero's PDF outline. When no references entry 
 After building, create this proxy file in the active Zotero profile:
 
 ```text
-extensions/reference-linker@local.invalid
+extensions/zotero-reference-linker@ottersem.github.io
 ```
 
 Its contents should be the absolute path to the project's `build` directory. Restart Zotero after changing the build.

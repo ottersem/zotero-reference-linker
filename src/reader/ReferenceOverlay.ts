@@ -1,19 +1,51 @@
 import type { MatchResult, ReferenceBlock } from "../core/types";
 
+interface IndexedPage {
+  page: HTMLElement;
+  pageIndex: number;
+  spans: HTMLElement[];
+  text: string;
+  offsets: Array<{ start: number; end: number }>;
+  searchableStart: number;
+  searchableEnd: number;
+  compact: { text: string; offsets: number[] };
+}
+
 export class ReferenceOverlay {
   private static readonly styleID = "reference-linker-style";
+  private pages: IndexedPage[] = [];
+  private hits = new WeakMap<Element, MatchResult>();
+  private readonly clickHandler = (event: Event) => {
+    const element = event.target instanceof this.doc.defaultView!.Element
+      ? event.target.closest(".reference-linker-hit")
+      : null;
+    const match = element ? this.hits.get(element) : undefined;
+    if (!match) return;
+    event.preventDefault();
+    event.stopPropagation();
+    this.onOpen(match);
+  };
 
   constructor(private readonly doc: Document, private readonly onOpen: (match: MatchResult) => void) {
     this.installStyle();
+    this.doc.addEventListener("click", this.clickHandler, true);
   }
 
   clear(): void {
     this.doc.querySelectorAll(".reference-linker-hit").forEach(node => node.classList.remove("reference-linker-hit"));
     this.doc.querySelectorAll(".reference-linker-badge").forEach(node => node.remove());
+    this.hits = new WeakMap<Element, MatchResult>();
+  }
+
+  linkCount(): number {
+    return this.doc.querySelectorAll(".reference-linker-badge").length;
   }
 
   render(reference: ReferenceBlock, match: MatchResult): void {
-    for (const fragment of reference.fragments) fragment.element.classList.add("reference-linker-hit");
+    for (const fragment of reference.fragments) {
+      fragment.element.classList.add("reference-linker-hit");
+      this.hits.set(fragment.element, match);
+    }
     const anchor = reference.fragments.at(-1)?.element;
     const page = anchor?.closest<HTMLElement>(".page");
     if (!anchor || !page) return;
@@ -35,8 +67,86 @@ export class ReferenceOverlay {
     page.append(badge);
   }
 
+  indexPages(startPage: number, endPage: number, startHeading?: string, endHeading?: string): string {
+    this.pages = [];
+    const sectionText: string[] = [];
+    for (const page of this.doc.querySelectorAll<HTMLElement>(".page")) {
+      const pageIndex = (Number(page.dataset.pageNumber) || 1) - 1;
+      if (pageIndex < startPage || pageIndex > endPage) continue;
+      const spans = Array.from(page.querySelectorAll<HTMLElement>(".textLayer span"));
+      if (!spans.length) continue;
+      const joined = this.joinSpans(spans);
+      let searchableStart = 0;
+      let searchableEnd = joined.text.length;
+      if (pageIndex === startPage && startHeading) {
+        const headingAt = this.findHeading(joined.text, startHeading, 0);
+        if (headingAt >= 0) searchableStart = headingAt + startHeading.length;
+      }
+      if (pageIndex === endPage && endHeading) {
+        const headingAt = this.findHeading(joined.text, endHeading, searchableStart);
+        if (headingAt >= 0) searchableEnd = headingAt;
+      }
+      const searchableText = joined.text.slice(searchableStart, searchableEnd);
+      this.pages.push({
+        page,
+        pageIndex,
+        spans,
+        text: joined.text,
+        offsets: joined.offsets,
+        searchableStart,
+        searchableEnd,
+        compact: this.compactText(searchableText)
+      });
+      sectionText.push(searchableText);
+    }
+    return sectionText.join(" ");
+  }
+
+  renderIndexed(index: number, match: MatchResult): boolean {
+    for (const { text, offsets, spans, pageIndex, searchableStart, searchableEnd } of this.pages) {
+      const markers = [...text.matchAll(/\[\s*(\d{1,4})\s*\]/g)];
+      const markerIndex = markers.findIndex(marker => Number(marker[1]) === index);
+      if (markerIndex < 0) continue;
+      const start = markers[markerIndex]!.index!;
+      if (start < searchableStart || start >= searchableEnd) continue;
+      const end = Math.min(markers[markerIndex + 1]?.index ?? searchableEnd, searchableEnd);
+      const first = offsets.findIndex(offset => offset.end > start);
+      let last = offsets.findIndex(offset => offset.start >= end);
+      if (first < 0) continue;
+      if (last < 0) last = offsets.length;
+      const fragments = spans.slice(first, last).map((element, order) => ({ text: element.textContent || "", element, page: pageIndex + 1, order }));
+      if (!fragments.length) continue;
+      this.render({ raw: "", fragments, index }, match);
+      return true;
+    }
+    return false;
+  }
+
+  renderTitle(title: string, match: MatchResult): boolean {
+    const target = this.compactText(title).text;
+    if (target.length < 12) return false;
+    for (const { compact, searchableStart, offsets, spans, pageIndex } of this.pages) {
+      const compactStart = compact.text.indexOf(target);
+      if (compactStart < 0) continue;
+      const start = searchableStart + compact.offsets[compactStart]!;
+      const end = searchableStart + compact.offsets[compactStart + target.length - 1]! + 1;
+      const first = offsets.findIndex(offset => offset.end > start);
+      let last = offsets.findIndex(offset => offset.start >= end);
+      if (first < 0) continue;
+      if (last < 0) last = spans.length;
+      const fragments = spans.slice(first, last).map((element, order) => ({
+        text: element.textContent || "", element, page: pageIndex + 1, order
+      }));
+      if (!fragments.length) continue;
+      this.render({ raw: title, fragments }, match);
+      return true;
+    }
+    return false;
+  }
+
   destroy(): void {
     this.clear();
+    this.doc.removeEventListener("click", this.clickHandler, true);
     this.doc.getElementById(ReferenceOverlay.styleID)?.remove();
   }
 
@@ -50,5 +160,37 @@ export class ReferenceOverlay {
       .reference-linker-badge:hover { background: #ffe35c; }
     `;
     (this.doc.head || this.doc.documentElement).append(style);
+  }
+
+  private joinSpans(spans: HTMLElement[]): { text: string; offsets: Array<{ start: number; end: number }> } {
+    let text = "";
+    const offsets: Array<{ start: number; end: number }> = [];
+    for (const span of spans) {
+      if (text) text += " ";
+      const start = text.length;
+      text += span.textContent || "";
+      offsets.push({ start, end: text.length });
+    }
+    return { text, offsets };
+  }
+
+  private findHeading(text: string, heading: string, from: number): number {
+    const words = heading.trim().split(/\s+/).map(word => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    const match = new RegExp(words.join("\\s+"), "i").exec(text.slice(from));
+    return match ? from + match.index : -1;
+  }
+
+  private compactText(value: string): { text: string; offsets: number[] } {
+    let text = "";
+    const offsets: number[] = [];
+    for (let i = 0; i < value.length; i++) {
+      const normalized = value[i]!.normalize("NFKD").toLowerCase().replace(/\p{M}/gu, "");
+      for (const character of normalized) {
+        if (!/[\p{L}\p{N}]/u.test(character)) continue;
+        text += character;
+        offsets.push(i);
+      }
+    }
+    return { text, offsets };
   }
 }

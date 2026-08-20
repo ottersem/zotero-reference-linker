@@ -1,14 +1,40 @@
 {
   "name": "zotero-reference-linker",
-  "version": "0.2.1",
-  "private": true,
-  "description": "Zotero 9–10 Reader overlay for references already in your library",
+  "version": "0.9.0",
+  "description": "Link references in Zotero PDFs to items in your library",
+  "author": "ottersem",
+  "homepage": "https://github.com/ottersem/zotero-reference-linker#readme",
+  "bugs": {
+    "url": "https://github.com/ottersem/zotero-reference-linker/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ottersem/zotero-reference-linker.git"
+  },
+  "keywords": [
+    "zotero",
+    "zotero-plugin",
+    "references",
+    "bibliography",
+    "pdf"
+  ],
+  "files": [
+    "build/",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "build": "node scripts/build.mjs",
-    "verify": "npm run typecheck && npm test && npm run build"
+    "verify": "npm run typecheck && npm test && npm run build",
+    "prepack": "npm run verify"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -2,19 +2,21 @@ import { normalizeArxiv, normalizeDOI, normalizeTitle, similarity, surname } fro
 import type { LibraryRecord, MatchResult, ParsedCitation } from "./types";
 
 export class LibraryMatcher {
-  private records: LibraryRecord[] = [];
+  private searchable: Array<{ record: LibraryRecord; compactTitle: string; anchor: string }> = [];
   private byDOI = new Map<string, LibraryRecord>();
   private byArxiv = new Map<string, LibraryRecord>();
   private byTitle = new Map<string, LibraryRecord[]>();
+  private byToken = new Map<string, Set<LibraryRecord>>();
 
   constructor(private readonly zotero: ZoteroAPI) {}
 
   async index(libraryID: number): Promise<void> {
     const items = await this.zotero.Items.getAll(libraryID, true, false);
-    this.records = [];
+    this.searchable = [];
     this.byDOI.clear();
     this.byArxiv.clear();
     this.byTitle.clear();
+    this.byToken.clear();
     for (const item of items) {
       if (!item.isRegularItem()) continue;
       const title = item.getField("title");
@@ -36,7 +38,18 @@ export class LibraryMatcher {
         firstAuthor: surname(creators[0]?.lastName || creators[0]?.name),
         pdfAttachmentID
       };
-      this.records.push(record);
+      const titleWords = record.normalizedTitle.split(" ").filter(Boolean);
+      const compactTitle = titleWords.join("");
+      this.searchable.push({
+        record,
+        compactTitle,
+        anchor: compactTitle.slice(0, 8)
+      });
+      for (const token of new Set(titleWords.filter(word => word.length > 2))) {
+        const records = this.byToken.get(token) || new Set<LibraryRecord>();
+        records.add(record);
+        this.byToken.set(token, records);
+      }
       if (record.doi) this.byDOI.set(record.doi, record);
       if (record.arxiv) this.byArxiv.set(record.arxiv, record);
       const titled = this.byTitle.get(record.normalizedTitle) || [];
@@ -58,8 +71,12 @@ export class LibraryMatcher {
     const exact = this.bestMetadata(this.byTitle.get(citation.normalizedTitle) || [], citation);
     if (exact) return { record: exact, method: "title-exact", score: 0.98 };
 
+    const candidates = new Set<LibraryRecord>();
+    for (const token of citation.normalizedTitle.split(" ").filter(word => word.length > 2)) {
+      for (const record of this.byToken.get(token) || []) candidates.add(record);
+    }
     let best: { record: LibraryRecord; score: number } | undefined;
-    for (const record of this.records) {
+    for (const record of candidates) {
       const titleScore = similarity(citation.normalizedTitle, record.normalizedTitle);
       if (titleScore < 0.8) continue;
       const yearBonus = citation.year && record.year ? (citation.year === record.year ? 0.06 : Math.abs(citation.year - record.year) <= 1 ? 0.02 : -0.12) : 0;
@@ -68,6 +85,21 @@ export class LibraryMatcher {
       if (!best || score > best.score) best = { record, score };
     }
     return best && best.score >= 0.84 ? { ...best, method: "title-fuzzy" } : undefined;
+  }
+
+  findTitlesInText(value: string): MatchResult[] {
+    const normalized = normalizeTitle(value);
+    const compact = normalized.replace(/\s/g, "");
+    const anchors = new Set<string>();
+    for (let i = 0; i <= compact.length - 8; i++) anchors.add(compact.slice(i, i + 8));
+    const results: MatchResult[] = [];
+    for (const { record, compactTitle, anchor } of this.searchable) {
+      if (!anchors.has(anchor)) continue;
+      if (compactTitle.length >= 12 && compact.includes(compactTitle)) {
+        results.push({ record, method: "title-exact", score: 0.98 });
+      }
+    }
+    return results;
   }
 
   private bestMetadata(records: LibraryRecord[], citation: ParsedCitation): LibraryRecord | undefined {

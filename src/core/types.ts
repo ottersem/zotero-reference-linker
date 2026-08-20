@@ -11,6 +11,15 @@ export interface ReferenceBlock {
   index?: number;
 }
 
+export interface ReferenceSection {
+  startPage: number;
+  endPage: number;
+  references: ReferenceBlock[];
+  source: "zotero-structure" | "heading-scan";
+  startHeading?: string;
+  endHeading?: string;
+}
+
 export interface ParsedCitation {
   raw: string;
   doi?: string;

@@ -1,5 +1,7 @@
 node_modules/
 build/
+*.xpi
 *.zip
+*.tgz
 .DS_Store
 **/.DS_Store
