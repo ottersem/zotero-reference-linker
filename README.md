@@ -4,6 +4,8 @@ Reference Linker marks papers in a PDF's bibliography when the same paper is alr
 
 The highlights are part of the reader UI. They do not modify the PDF or create Zotero annotations.
 
+<img src="./demo/demo.gif" alt="Demo" width="500">
+
 ## Install
 
 1. Download the latest XPI from [GitHub Releases](https://github.com/ottersem/zotero-reference-linker/releases/latest).
