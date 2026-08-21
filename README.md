@@ -1,3 +1,5 @@
+**Still maintaining parsing algorithm!**
+
 # Zotero Reference Linker
 
 Reference Linker marks papers in a PDF's bibliography when the same paper is already in your Zotero library. Clicking the highlight opens the saved PDF, or selects the library item when no PDF is attached.
