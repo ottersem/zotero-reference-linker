@@ -5,12 +5,11 @@ on:
     tags:
       - "v*"
 
-permissions:
-  contents: write
-
 jobs:
   release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,3 +25,24 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release create "$GITHUB_REF_NAME" zotero-reference-linker-*.xpi --generate-notes --verify-tag
+
+  publish-npm:
+    needs: release
+    if: github.repository == 'ottersem/zotero-reference-linker'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+      - run: npm ci
+      - name: Check tag and package versions
+        run: |
+          test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./package.json').version")"
+          test "${GITHUB_REF_NAME#v}" = "$(node -p "require('./manifest.json').version")"
+      - run: npm run verify
+      - run: npm publish --access public
