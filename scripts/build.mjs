@@ -28,7 +28,9 @@ await build({
 await Promise.all([
   cp(join(root, "bootstrap.js"), join(out, "bootstrap.js")),
   cp(join(root, "manifest.json"), join(out, "manifest.json")),
-  cp(join(root, "README.md"), join(out, "README.md"))
+  cp(join(root, "README.md"), join(out, "README.md")),
+  cp(join(root, "icon.png"), join(out, "icon.png")),
+  cp(join(root, "icon@2x.png"), join(out, "icon@2x.png")),
 ]);
 try { execFileSync("zip", ["-qr", xpi, "."], { cwd: out }); }
 catch { console.warn("zip command unavailable; build folder is still ready to install."); }

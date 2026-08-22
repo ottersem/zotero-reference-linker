@@ -2,6 +2,10 @@
   "manifest_version": 2,
   "name": "Reference Linker",
   "version": "0.9.5",
+  "icons": {
+    "48": "icon.png",
+    "96": "icon@2x.png"
+  },
   "description": "Highlights references whose papers are already in your Zotero library.",
   "author": "ottersem",
   "applications": {
