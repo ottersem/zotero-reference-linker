@@ -5,3 +5,5 @@ build/
 *.tgz
 .DS_Store
 **/.DS_Store
+CHANGELOG.md
+tmp/
