@@ -1,6 +1,6 @@
 {
   "name": "zotero-reference-linker",
-  "version": "0.9.0",
+  "version": "0.9.5",
   "description": "Link references in Zotero PDFs to items in your library",
   "author": "ottersem",
   "homepage": "https://github.com/ottersem/zotero-reference-linker#readme",

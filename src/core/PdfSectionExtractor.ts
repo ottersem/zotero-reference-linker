@@ -1,6 +1,7 @@
+import { surname } from "./normalize";
 import type { ReferenceBlock, ReferenceSection } from "./types";
 
-interface PdfTextItem { str?: string; hasEOL?: boolean }
+interface PdfTextItem { str?: string; hasEOL?: boolean; transform?: ArrayLike<number> }
 interface PdfPage { getTextContent(): Promise<{ items: PdfTextItem[] }> }
 interface OutlineItem {
   title?: string;
@@ -13,10 +14,19 @@ export interface PdfDocument {
   getOutline2?(): Promise<OutlineItem[] | null>;
 }
 
-const REFERENCE_HEADING = /^\s*(references|bibliography|works cited|literature cited|references cited)\s*$/i;
-const STOP_HEADING = /^\s*(appendix|appendices|supplementary material|supplemental material|acknowledg(?:e)?ments?)\b/i;
-const NUMBERED_START = /(?:^|\n)\s*(?:\[\s*(\d{1,4})\s*\]|(\d{1,4})[.)])\s+/g;
-const AUTHOR_START = /(?:^|\n)(?=\s*(?:(?:de|del|den|der|di|du|la|le|van|von)\s+)?[A-ZÀ-ÖØ-Þ][\p{L}'’-]+,\s*(?:[A-Z](?:[-.\s]|$)){1,4})/gu;
+const REFERENCE_HEADING = /^\s*(?:\d{1,4}\s+)?(references|bibliography|works cited|literature cited|references cited)(?:\s+\d{1,4})?\s*$/i;
+const STOP_HEADING = /^\s*(?:\d{1,4}\s+)?(appendix|appendices|supplementary material|supplemental material|acknowledg(?:e)?ments?)(?:\s+\d{1,4})?\b/i;
+const LETTERED_STOP_HEADING = /^\s*A(?:\.\d+)?(?:\.\s*|\s+)(?=[\p{Lu}])[^,.;]{2,100}\s*$/u;
+const LABELED_START = /(?:^|\n)\s*(?:\[\s*((?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23})\s*\]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})[.)])\s+/g;
+const PARTICLE = `(?:[Dd]e|[Dd]el|[Dd]en|[Dd]er|[Dd]i|[Dd]u|[Ll]a|[Ll]e|[Vv]an|[Vv]on)\\s+`;
+const SURNAME = `(?:${PARTICLE}){0,3}[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+(?:\\s+[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+){0,2}`;
+const INITIALS = `(?:[A-Z](?:\\.-[A-Z])?\\.(?:\\s*[A-Z](?:\\.-[A-Z])?\\.){0,5}|[A-Z](?:-[A-Z])?(?=\\s*[,;]))`;
+const AUTHOR_START = new RegExp(`(?:^|\\n)(?=\\s*${SURNAME},\\s*${INITIALS})`, "gu");
+const ORGANIZATION_START = /(?:^|\n)(?=\s*[A-Z][^\n,]{1,80}\b(?:Collaboration|Partnership)\b[^\n]*\b(?:19|20)\d{2}[a-z]?\b)/gu;
+const DITTO_START = /(?:^|\n)(?=\s*[—–-]\.\s*(?:19|20)\d{2}[a-z]?\b)/gu;
+const DISCRETIONARY_HYPHEN = /[-\u00ad\u0002]\s*$/;
+const CONTINUATION_LINE = "\u0001";
+const PDF_DIACRITIC_ARTIFACT = /[´`^¨]\s*/g;
 
 export class PdfSectionExtractor {
   async extract(pdf: PdfDocument): Promise<ReferenceSection | undefined> {
@@ -64,11 +74,11 @@ export class PdfSectionExtractor {
     for (let pageIndex = 0; pageIndex < pdf.numPages; pageIndex++) {
       const lines = await this.pageLines(pdf, pageIndex);
       if (!found) {
-        const startLine = lines.findIndex(line => REFERENCE_HEADING.test(line));
+        const startLine = lines.findIndex(line => REFERENCE_HEADING.test(this.visibleLine(line)));
         if (startLine >= 0) found = { startPage: pageIndex, startLine: startLine + 1 };
         continue;
       }
-      const stopLine = lines.findIndex(line => STOP_HEADING.test(line));
+      const stopLine = lines.findIndex(line => this.isStopHeading(line));
       if (stopLine >= 0) return { ...found, endPage: pageIndex, endLine: stopLine };
     }
     return found ? { ...found, endPage: pdf.numPages - 1 } : undefined;
@@ -98,7 +108,7 @@ export class PdfSectionExtractor {
       }
       if (pageIndex === startPage) lines = lines.slice(startLine);
       if (pageIndex === endPage && endLine != null) lines = lines.slice(0, endLine);
-      const stopLine = lines.findIndex(line => STOP_HEADING.test(line));
+      const stopLine = lines.findIndex(line => this.isStopHeading(line));
       if (stopLine >= 0) {
         lines = lines.slice(0, stopLine);
         detectedEndPage = pageIndex;
@@ -115,6 +125,15 @@ export class PdfSectionExtractor {
     return normalize(a) === normalize(b);
   }
 
+  private isStopHeading(line: string): boolean {
+    const visible = this.visibleLine(line);
+    return STOP_HEADING.test(visible) || LETTERED_STOP_HEADING.test(visible);
+  }
+
+  private visibleLine(line: string): string {
+    return line.replaceAll(CONTINUATION_LINE, "");
+  }
+
   private async pageLines(pdf: PdfDocument, pageIndex: number): Promise<string[]> {
     const wrappedPage = await pdf.getPage(pageIndex + 1);
     const page = this.unwrap(wrappedPage);
@@ -122,17 +141,85 @@ export class PdfSectionExtractor {
       throw new Error(`Reference Linker: PDF page ${pageIndex + 1} does not expose getTextContent()`);
     }
     const content = await page.getTextContent();
-    const lines: string[] = [];
+    const lines: Array<{ text: string; x?: number; y?: number; order: number }> = [];
     let line = "";
+    let lineX: number | undefined;
+    let lineY: number | undefined;
+    let continued = "";
+    let continuedX: number | undefined;
+    let continuedY: number | undefined;
     for (const item of content.items) {
-      if (item.str) line += (line && !/[-–—\s]$/.test(line) ? " " : "") + item.str;
+      if (item.str) {
+        if (!line) {
+          lineX = typeof item.transform?.[4] === "number" ? item.transform[4] : undefined;
+          lineY = typeof item.transform?.[5] === "number" ? item.transform[5] : undefined;
+        }
+        line += (line && !/[-–—\s]$/.test(line) ? " " : "") + item.str;
+      }
       if (item.hasEOL) {
-        if (line.trim()) lines.push(line.replace(/-\s*$/, "").trim());
+        const value = line.trim();
+        if (DISCRETIONARY_HYPHEN.test(value)) {
+          if (!continued) {
+            continuedX = lineX;
+            continuedY = lineY;
+          }
+          continued += value.replace(DISCRETIONARY_HYPHEN, "");
+        } else if (value) {
+          lines.push({ text: `${continued}${value}`.replace(PDF_DIACRITIC_ARTIFACT, "").trim(), x: continuedX ?? lineX, y: continuedY ?? lineY, order: lines.length });
+          continued = "";
+          continuedX = undefined;
+          continuedY = undefined;
+        }
         line = "";
+        lineX = undefined;
+        lineY = undefined;
       }
     }
-    if (line.trim()) lines.push(line.trim());
-    return lines;
+    if (line.trim() || continued) lines.push({ text: `${continued}${line.trim()}`.replace(PDF_DIACRITIC_ARTIFACT, "").trim(), x: continuedX ?? lineX, y: continuedY ?? lineY, order: lines.length });
+    const positionCounts = new Map<number, number>();
+    for (const value of lines) {
+      if (value.x == null) continue;
+      const position = Math.round(value.x);
+      positionCounts.set(position, (positionCounts.get(position) || 0) + 1);
+    }
+    const recurringPositions = [...positionCounts]
+      .filter(([, count]) => count >= 2)
+      .map(([position]) => position);
+    const numberedLines = lines.map(value => Number(value.text.match(/\s(\d{1,4})$/)?.[1] || NaN));
+    let sequentialRun = 0;
+    let longestSequentialRun = 0;
+    for (let i = 1; i < numberedLines.length; i++) {
+      sequentialRun = Number.isFinite(numberedLines[i - 1]) && numberedLines[i] === numberedLines[i - 1]! + 1 ? sequentialRun + 1 : 0;
+      longestSequentialRun = Math.max(longestSequentialRun, sequentialRun);
+    }
+    if (longestSequentialRun >= 3) {
+      for (const value of lines) value.text = value.text.replace(/\s+\d{1,4}$/, "");
+    }
+    const columnBases = recurringPositions
+      .sort((a, b) => a - b)
+      .filter(position => !recurringPositions.some(other => position - other >= 5 && position - other <= 24));
+    const hasColumns = columnBases.length >= 2 && columnBases.at(-1)! - columnBases[0]! >= 100;
+    const ordered = hasColumns ? [...lines].sort((a, b) => {
+      const column = (value: typeof a) => {
+        if (REFERENCE_HEADING.test(value.text)) return 0;
+        if (value.x == null) return 0;
+        let best = 0;
+        for (let i = 1; i < columnBases.length; i++) {
+          if (Math.abs(value.x - columnBases[i]!) < Math.abs(value.x - columnBases[best]!)) best = i;
+        }
+        return best;
+      };
+      const columnDifference = column(a) - column(b);
+      if (columnDifference) return columnDifference;
+      if (a.y != null && b.y != null && Math.abs(a.y - b.y) > 0.5) return b.y - a.y;
+      return a.order - b.order;
+    }) : lines;
+    return ordered.map(value => {
+      if (value.x == null) return value.text;
+      const indented = columnBases.some(position => value.x! - position >= 5 && value.x! - position <= 24);
+      const labeled = /^\s*(?:\[\s*[A-Za-z0-9][^\]]{0,24}\]|\d{1,4}[.)])\s+/.test(value.text);
+      return indented && !labeled ? `${CONTINUATION_LINE}${value.text}` : value.text;
+    });
   }
 
   private unwrap<T>(value: T): T {
@@ -144,18 +231,27 @@ export class PdfSectionExtractor {
   }
 
   private splitReferences(text: string): ReferenceBlock[] {
-    const starts = [...text.matchAll(NUMBERED_START)];
+    const starts = [...text.matchAll(LABELED_START)];
     if (starts.length >= 2) {
       return starts.map((match, i) => ({
-        raw: text.slice(match.index!, starts[i + 1]?.index ?? text.length).trim(),
+        raw: this.visibleLine(text.slice(match.index!, starts[i + 1]?.index ?? text.length)).trim(),
         fragments: [],
-        index: Number(match[1] || match[2])
+        index: /^\d+$/.test(match[1] || match[2] || "") ? Number(match[1] || match[2]) : undefined
       })).filter(block => block.raw.length >= 20);
     }
-    const authorStarts = [...text.matchAll(AUTHOR_START)];
-    return authorStarts.map((match, i) => ({
-      raw: text.slice(match.index!, authorStarts[i + 1]?.index ?? text.length).trim(),
-      fragments: []
-    })).filter(block => block.raw.length >= 20);
+    const indices = [...new Set([
+      ...[...text.matchAll(AUTHOR_START)].map(match => match.index!),
+      ...[...text.matchAll(ORGANIZATION_START)].map(match => match.index!),
+      ...[...text.matchAll(DITTO_START)].map(match => match.index!)
+    ])].sort((a, b) => a - b);
+    let previousAuthor: string | undefined;
+    return indices.map((start, i) => {
+      const raw = this.visibleLine(text.slice(start, indices[i + 1] ?? text.length)).trim();
+      const author = raw.match(new RegExp(`^(${SURNAME}),`, "u"))?.[1];
+      const organization = raw.match(/^([^,]{1,80}\b(?:Collaboration|Partnership)\b)/i)?.[1];
+      const firstAuthorHint = /^[—–-]\./.test(raw) ? previousAuthor : surname(author || organization);
+      if (firstAuthorHint) previousAuthor = firstAuthorHint;
+      return { raw, fragments: [], firstAuthorHint };
+    }).filter(block => block.raw.length >= 20);
   }
 }

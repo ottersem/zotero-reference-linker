@@ -9,6 +9,7 @@ export interface ReferenceBlock {
   raw: string;
   fragments: TextFragment[];
   index?: number;
+  firstAuthorHint?: string;
 }
 
 export interface ReferenceSection {
@@ -26,8 +27,15 @@ export interface ParsedCitation {
   arxiv?: string;
   title?: string;
   normalizedTitle?: string;
+  containerTitle?: string;
+  normalizedContainerTitle?: string;
   year?: number;
   firstAuthor?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  articleNumber?: string;
+  itemTypeHint?: "book" | "bookSection" | "conferencePaper" | "journalArticle";
 }
 
 export interface LibraryRecord {
@@ -36,13 +44,20 @@ export interface LibraryRecord {
   arxiv?: string;
   title: string;
   normalizedTitle: string;
+  containerTitle?: string;
+  normalizedContainerTitle?: string;
   year?: number;
   firstAuthor?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  articleNumber?: string;
+  itemType?: string;
   pdfAttachmentID?: number;
 }
 
 export interface MatchResult {
   record: LibraryRecord;
-  method: "doi" | "arxiv" | "title-exact" | "title-fuzzy";
+  method: "doi" | "arxiv" | "bibliographic" | "title-exact" | "title-fuzzy";
   score: number;
 }

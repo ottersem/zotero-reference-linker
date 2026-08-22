@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Reference Linker",
-  "version": "0.9.0",
+  "version": "0.9.5",
   "description": "Highlights references whose papers are already in your Zotero library.",
   "author": "ottersem",
   "applications": {

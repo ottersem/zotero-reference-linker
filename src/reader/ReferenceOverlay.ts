@@ -15,6 +15,8 @@ export class ReferenceOverlay {
   private static readonly styleID = "reference-linker-style";
   private pages: IndexedPage[] = [];
   private hits = new WeakMap<Element, MatchResult>();
+  private claimedElements = new WeakSet<Element>();
+  private renderedReferences = new Set<string>();
   private readonly clickHandler = (event: Event) => {
     const element = event.target instanceof this.doc.defaultView!.Element
       ? event.target.closest(".reference-linker-hit")
@@ -35,20 +37,26 @@ export class ReferenceOverlay {
     this.doc.querySelectorAll(".reference-linker-hit").forEach(node => node.classList.remove("reference-linker-hit"));
     this.doc.querySelectorAll(".reference-linker-badge").forEach(node => node.remove());
     this.hits = new WeakMap<Element, MatchResult>();
+    this.claimedElements = new WeakSet<Element>();
+    this.renderedReferences.clear();
   }
 
   linkCount(): number {
     return this.doc.querySelectorAll(".reference-linker-badge").length;
   }
 
-  render(reference: ReferenceBlock, match: MatchResult): void {
+  render(reference: ReferenceBlock, match: MatchResult, referenceKey: string): boolean {
+    if (this.renderedReferences.has(referenceKey)
+      || reference.fragments.some(fragment => this.claimedElements.has(fragment.element))) return false;
+    const anchor = reference.fragments.at(-1)?.element;
+    const page = anchor?.closest<HTMLElement>(".page");
+    if (!anchor || !page) return false;
+
     for (const fragment of reference.fragments) {
+      this.claimedElements.add(fragment.element);
       fragment.element.classList.add("reference-linker-hit");
       this.hits.set(fragment.element, match);
     }
-    const anchor = reference.fragments.at(-1)?.element;
-    const page = anchor?.closest<HTMLElement>(".page");
-    if (!anchor || !page) return;
 
     const pageRect = page.getBoundingClientRect();
     const rect = anchor.getBoundingClientRect();
@@ -65,6 +73,8 @@ export class ReferenceOverlay {
       this.onOpen(match);
     });
     page.append(badge);
+    this.renderedReferences.add(referenceKey);
+    return true;
   }
 
   indexPages(startPage: number, endPage: number, startHeading?: string, endHeading?: string): string {
@@ -102,7 +112,7 @@ export class ReferenceOverlay {
     return sectionText.join(" ");
   }
 
-  renderIndexed(index: number, match: MatchResult): boolean {
+  renderIndexed(index: number, match: MatchResult, referenceKey = `index:${index}`): boolean {
     for (const { text, offsets, spans, pageIndex, searchableStart, searchableEnd } of this.pages) {
       const markers = [...text.matchAll(/\[\s*(\d{1,4})\s*\]/g)];
       const markerIndex = markers.findIndex(marker => Number(marker[1]) === index);
@@ -116,32 +126,56 @@ export class ReferenceOverlay {
       if (last < 0) last = offsets.length;
       const fragments = spans.slice(first, last).map((element, order) => ({ text: element.textContent || "", element, page: pageIndex + 1, order }));
       if (!fragments.length) continue;
-      this.render({ raw: "", fragments, index }, match);
-      return true;
+      return this.render({ raw: "", fragments, index }, match, referenceKey);
     }
     return false;
   }
 
-  renderTitle(title: string, match: MatchResult): boolean {
+  renderTitle(title: string, match: MatchResult, referenceKey = `title:${title}`): boolean {
     const target = this.compactText(title).text;
     if (target.length < 12) return false;
     for (const { compact, searchableStart, offsets, spans, pageIndex } of this.pages) {
-      const compactStart = compact.text.indexOf(target);
-      if (compactStart < 0) continue;
-      const start = searchableStart + compact.offsets[compactStart]!;
-      const end = searchableStart + compact.offsets[compactStart + target.length - 1]! + 1;
-      const first = offsets.findIndex(offset => offset.end > start);
-      let last = offsets.findIndex(offset => offset.start >= end);
-      if (first < 0) continue;
-      if (last < 0) last = spans.length;
-      const fragments = spans.slice(first, last).map((element, order) => ({
-        text: element.textContent || "", element, page: pageIndex + 1, order
-      }));
-      if (!fragments.length) continue;
-      this.render({ raw: title, fragments }, match);
-      return true;
+      let from = 0;
+      while (from <= compact.text.length - target.length) {
+        const found = this.findCompactText(compact.text, target, from);
+        if (!found) break;
+        const { start: compactStart, end: compactEnd } = found;
+        const start = searchableStart + compact.offsets[compactStart]!;
+        const end = searchableStart + compact.offsets[compactEnd - 1]! + 1;
+        const first = offsets.findIndex(offset => offset.end > start);
+        let last = offsets.findIndex(offset => offset.start >= end);
+        if (first >= 0) {
+          if (last < 0) last = spans.length;
+          const fragments = spans.slice(first, last).map((element, order) => ({
+            text: element.textContent || "", element, page: pageIndex + 1, order
+          }));
+          if (fragments.length && this.render({ raw: title, fragments }, match, referenceKey)) return true;
+        }
+        from = compactStart + 1;
+      }
     }
     return false;
+  }
+
+  private findCompactText(source: string, target: string, from: number): { start: number; end: number } | undefined {
+    const exact = source.indexOf(target, from);
+    if (exact >= 0) return { start: exact, end: exact + target.length };
+    for (let start = from; start < source.length; start++) {
+      let sourceIndex = start;
+      let targetIndex = 0;
+      while (sourceIndex < source.length && targetIndex < target.length) {
+        if (source[sourceIndex] === target[targetIndex]) {
+          sourceIndex++;
+          targetIndex++;
+          continue;
+        }
+        const insertedNumber = source.slice(sourceIndex).match(/^\d{1,4}/)?.[0];
+        if (!insertedNumber || /\d/.test(target[targetIndex]!)) break;
+        sourceIndex += insertedNumber.length;
+      }
+      if (targetIndex === target.length) return { start, end: sourceIndex };
+    }
+    return undefined;
   }
 
   destroy(): void {

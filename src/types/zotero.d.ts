@@ -28,6 +28,9 @@ interface ZoteroAPI {
     get(id: number): ZoteroItem | false;
     getAll(libraryID: number, onlyTopLevel?: boolean, includeDeleted?: boolean): Promise<ZoteroItem[]>;
   };
+  ItemTypes?: {
+    getName(itemTypeID: number): string;
+  };
   Reader: {
     registerEventListener(type: string, handler: (event: ReaderEvent) => void, pluginID: string): void;
     unregisterEventListener(type: string, handler: (event: ReaderEvent) => void): void;

@@ -124,26 +124,18 @@ export class ReaderIntegration {
         state.overlayDocument = doc;
       }
       state.overlay.clear();
-      const sectionText = state.overlay.indexPages(section.startPage, section.endPage, section.startHeading, section.endHeading);
+      state.overlay.indexPages(section.startPage, section.endPage, section.startHeading, section.endHeading);
       let matchedItems = 0;
-      const renderedItems = new Set<number>();
-      for (const reference of section.references) {
-        const match = matcher.match(this.parser.parse(reference));
+      for (const [position, reference] of section.references.entries()) {
+        const citation = this.parser.parse(reference);
+        const match = matcher.match(citation);
         if (!match || match.record.item.id === currentItemID) continue;
-        let rendered = false;
-        if (reference.index != null) {
-          rendered = state.overlay.renderIndexed(reference.index, match);
-        }
+        const referenceKey = reference.index == null ? `reference:${position}` : `index:${reference.index}`;
+        const rendered = reference.index != null
+          ? state.overlay.renderIndexed(reference.index, match, referenceKey)
+          : state.overlay.renderTitle(citation.title || reference.raw, match, referenceKey);
         if (rendered) {
           matchedItems++;
-          renderedItems.add(match.record.item.id);
-        }
-      }
-      for (const match of matcher.findTitlesInText(sectionText)) {
-        if (match.record.item.id === currentItemID || renderedItems.has(match.record.item.id)) continue;
-        if (state.overlay.renderTitle(match.record.title, match)) {
-          matchedItems++;
-          renderedItems.add(match.record.item.id);
         }
       }
       const linked = state.overlay.linkCount();
