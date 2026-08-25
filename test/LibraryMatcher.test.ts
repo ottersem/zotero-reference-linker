@@ -127,7 +127,9 @@ describe("LibraryMatcher", () => {
       { id: 1, title: "A Shared Research Title" },
       { id: 2, title: "A Shared Research Title" }
     ]);
-    expect(matcher.match(citation("A Shared Research Title"))).toBeUndefined();
+    const parsed = citation("A Shared Research Title");
+    expect(matcher.match(parsed)).toBeUndefined();
+    expect(matcher.matchWithOutcome(parsed)).toEqual({ ambiguous: true });
   });
 
   it("prefers the PDF-bearing copy when exact-title duplicates share a DOI", async () => {

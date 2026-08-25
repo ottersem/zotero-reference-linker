@@ -61,3 +61,8 @@ export interface MatchResult {
   method: "doi" | "arxiv" | "bibliographic" | "title-exact" | "title-fuzzy";
   score: number;
 }
+
+export interface MatchOutcome {
+  match?: MatchResult;
+  ambiguous: boolean;
+}

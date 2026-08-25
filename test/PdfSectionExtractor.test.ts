@@ -190,4 +190,107 @@ describe("PdfSectionExtractor", () => {
     expect(result?.references).toHaveLength(2);
     expect(result?.references[1]?.firstAuthorHint).toBe("kennicutt");
   });
+
+  it("splits a reference heading joined to the first numbered entry", async () => {
+    const document = pdf([
+      "Body",
+      "REFERENCES [1] A. Author. A useful paper title. 2020.\n[2] B. Author. Another useful paper title. 2021."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2]);
+  });
+
+  it("supports common surname-first and initials-first author styles", async () => {
+    const document = pdf([
+      "References\nAjay A, Du Y and Gupta A (2022) Conditional generative modeling for decision-making. Journal 10: 1-10.\nM. Ahn, A. Brohan, and N. Brown. Grounding language in robotic affordances. 2022.\nAmit, T.; Nachmani, E.; and Wolf, L. 2021. Image segmentation with diffusion models.\nCao D, Leong B and Curcio CA (2021) Optical coherence tomography progression indicators. Journal 20: 2-12."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(4);
+    expect(result?.references.map(reference => reference.firstAuthorHint)).toEqual(["ajay", "ahn", "amit", "cao"]);
+  });
+
+  it("recovers line boundaries from PDF coordinates when hasEOL is missing", async () => {
+    const document: PdfDocument = {
+      numPages: 1,
+      async getPage() {
+        const item = (str: string, x: number, y: number) => ({ str, transform: [1, 0, 0, 1, x, y] });
+        return { async getTextContent() { return { items: [
+          item("References", 50, 700),
+          item("Amit, T.; Nachmani, E.; and Wolf, L. 2021. A complete reference title.", 50, 680),
+          item("Baid, U.; Mohan, S.; and Bilello, M. 2021. Another complete reference title.", 50, 660)
+        ] }; } };
+      }
+    };
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+  });
+
+  it("does not select non-sequential prose numbers as numbered references", async () => {
+    const document = pdf([
+      "References\nAmit, T.; and Wolf, L. A complete reference title. 2021.\n3. Dataset cohort details are reported separately.\nBaid, U.; and Mohan, S. Another complete reference title. 2022.\n9. Evaluation details are reported separately."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+    expect(result?.references.map(reference => reference.firstAuthorHint)).toEqual(["amit", "baid"]);
+  });
+
+  it("repairs small-caps headings split into separate PDF text glyph runs", async () => {
+    const document: PdfDocument = {
+      numPages: 1,
+      async getPage() {
+        const item = (str: string, x: number, y: number, hasEOL = false) => ({ str, hasEOL, transform: [1, 0, 0, 1, x, y] });
+        return { async getTextContent() { return { items: [
+          item("R", 180, 300),
+          item("EFERENCES", 188, 300, true),
+          item("[1] A. Brohan, N. Brown, and C. Finn. A useful robotics paper. 2023.", 50, 280, true),
+          item("[2] M. Ahn, A. Author, and B. Writer. Another useful robotics paper. 2022.", 50, 260, true)
+        ] }; } };
+      }
+    };
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2]);
+  });
+
+  it("keeps the consecutive numbered run when unrelated lines look like labels", async () => {
+    const document = pdf([
+      "R EFERENCES\n[1] A. Author. A useful paper title. 2020.\n[2] B. Author. Another useful paper title. 2021.\n893. A page artifact that is not a reference.\n[3] C. Author. A third useful paper title. 2022.\n[2] An in-text citation from content after the references."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(3);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2, 3]);
+    expect(result?.references[2]?.raw).not.toContain("in-text citation");
+  });
+
+  it("orders a split small-caps reference heading before a right-column bibliography", async () => {
+    const document: PdfDocument = {
+      numPages: 1,
+      async getPage() {
+        const item = (str: string, x: number, y: number, hasEOL = true) => ({ str, hasEOL, transform: [1, 0, 0, 1, x, y] });
+        return { async getTextContent() { return { items: [
+          item("Body text in the left column.", 50, 320),
+          item("More body text in the left column.", 50, 280),
+          item("R", 410, 300, false),
+          item("EFERENCES", 418, 300),
+          item("[1] A. Author. A useful paper title. 2020.", 320, 280),
+          item("[2] B. Author. Another useful paper title. 2021.", 320, 260)
+        ] }; } };
+      }
+    };
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2]);
+  });
+
+  it("continues after a pre-reference acknowledgement is reordered behind the first reference page", async () => {
+    const document = pdf([
+      "R EFERENCES\n[1] A. Author. A useful paper title. 2020.\n[2] B. Author. Another useful paper title. 2021.\nA CKNOWLEDGEMENT\nThis section was physically before the right-column bibliography.",
+      "[3] C. Author. A third useful paper title. 2022.\n[4] D. Author. A fourth useful paper title. 2023.",
+      "A. APPENDIX DETAILS\nAppendix text"
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(4);
+    expect(result?.references[1]?.raw).not.toContain("physically before");
+  });
 });

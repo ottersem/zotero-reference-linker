@@ -14,6 +14,8 @@ interface ReaderState {
   scanning: boolean;
   fingerprint?: string;
   lastMatched?: number;
+  summary?: HTMLElement;
+  summaryTimer?: number;
   sectionPromise?: Promise<ReferenceSection | undefined>;
   unloadHandler?: () => void;
 }
@@ -46,6 +48,7 @@ export class ReaderIntegration {
     button.title = "Scan References and link items in your library";
     button.setAttribute("aria-label", "Link library references");
     button.textContent = "Ref ↗";
+    this.installToolbarStyle(doc);
     button.addEventListener("click", async () => {
       const original = button.textContent;
       button.textContent = "Scanning…";
@@ -62,6 +65,14 @@ export class ReaderIntegration {
       reader._iframeWindow?.setTimeout(() => { button.textContent = original; }, 2500);
     });
     append(button);
+    const summary = this.createSummary(doc, button);
+    (doc.body || doc.documentElement).append(summary);
+    const state = this.states.get(reader) || { scanning: false };
+    if (state.summaryTimer) state.summary?.ownerDocument.defaultView?.clearTimeout(state.summaryTimer);
+    state.summary?.remove();
+    state.summary = summary;
+    state.summaryTimer = undefined;
+    this.states.set(reader, state);
     this.attach(reader);
   }
 
@@ -126,11 +137,16 @@ export class ReaderIntegration {
       state.overlay.clear();
       state.overlay.indexPages(section.startPage, section.endPage, section.startHeading, section.endHeading);
       let matchedItems = 0;
+      let ambiguousItems = 0;
+      let unmatchedItems = 0;
       for (const [position, reference] of section.references.entries()) {
         const citation = this.parser.parse(reference);
-        const match = matcher.match(citation);
+        const outcome = matcher.matchWithOutcome(citation);
+        const match = outcome.match;
         const referenceKey = reference.index == null ? `reference:${position}` : `index:${reference.index}`;
         if (!match) {
+          if (outcome.ambiguous) ambiguousItems++;
+          else unmatchedItems++;
           if (reference.index != null) {
             state.overlay.renderIndexedUnmatched(reference.index, referenceKey);
           } else {
@@ -138,15 +154,19 @@ export class ReaderIntegration {
           }
           continue;
         }
+        matchedItems++;
         if (match.record.item.id === currentItemID) continue;
-        const rendered = reference.index != null
+        reference.index != null
           ? state.overlay.renderIndexed(reference.index, match, referenceKey)
           : state.overlay.renderTitle(citation.title || reference.raw, match, referenceKey);
-        if (rendered) {
-          matchedItems++;
-        }
       }
       const linked = state.overlay.linkCount();
+      this.updateSummary(state, {
+        scanned: section.references.length,
+        matched: matchedItems,
+        ambiguous: ambiguousItems,
+        unmatched: unmatchedItems
+      });
       this.zotero.debug(`Reference Linker: ${linked} links rendered; ${matchedItems} library items matched; source=${section.source}`);
       state.lastMatched = linked;
       return linked;
@@ -166,6 +186,50 @@ export class ReaderIntegration {
       state.sectionPromise.catch(() => { state.sectionPromise = undefined; });
     }
     return state.sectionPromise;
+  }
+
+  private installToolbarStyle(doc: Document): void {
+    if (doc.getElementById("reference-linker-toolbar-style")) return;
+    const style = doc.createElement("style");
+    style.id = "reference-linker-toolbar-style";
+    style.textContent = `
+      .reference-linker-summary {
+        position: fixed; right: 8px; z-index: 1000; display: none; min-width: 128px;
+        box-sizing: border-box; padding: 8px 10px; border-radius: 6px;
+        background: rgba(24, 119, 242, .5); color: white;
+        font: 600 12px/1.55 system-ui, sans-serif; white-space: pre;
+        pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+      }
+    `;
+    (doc.head || doc.documentElement).append(style);
+  }
+
+  private createSummary(doc: Document, button: HTMLElement): HTMLElement {
+    const summary = doc.createElement("div");
+    summary.className = "reference-linker-summary";
+    summary.setAttribute("role", "status");
+    summary.setAttribute("aria-live", "polite");
+    const position = () => {
+      const rect = button.getBoundingClientRect();
+      summary.style.top = `${rect.bottom + 6}px`;
+      summary.style.right = "8px";
+    };
+    position();
+    return summary;
+  }
+
+  private updateSummary(state: ReaderState, counts: { scanned: number; matched: number; ambiguous: number; unmatched: number }): void {
+    if (!state.summary) return;
+    state.summary.textContent = `scanned : ${counts.scanned}\nmatched : ${counts.matched}\nambiguous : ${counts.ambiguous}\nunmatched : ${counts.unmatched}`;
+    state.summary.style.display = "block";
+    const summary = state.summary;
+    const win = summary.ownerDocument.defaultView;
+    if (!win) return;
+    if (state.summaryTimer) win.clearTimeout(state.summaryTimer);
+    state.summaryTimer = win.setTimeout(() => {
+      if (state.summary === summary) summary.style.display = "none";
+      state.summaryTimer = undefined;
+    }, 30_000);
   }
 
   private pageFingerprint(doc: Document): string {
@@ -248,8 +312,10 @@ export class ReaderIntegration {
     state?.outerObserver?.disconnect();
     state?.viewerObserver?.disconnect();
     state?.overlay?.destroy();
+    state?.summary?.remove();
     const win = reader._iframeWindow;
     if (state?.timer && win) win.clearTimeout(state.timer);
+    if (state?.summaryTimer) state.summary?.ownerDocument.defaultView?.clearTimeout(state.summaryTimer);
     if (state?.unloadHandler && win) win.removeEventListener("unload", state.unloadHandler);
   }
 }

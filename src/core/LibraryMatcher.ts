@@ -1,5 +1,5 @@
 import { normalizeArxiv, normalizeContainerTitle, normalizeDOI, normalizeLocator, normalizeTitle, normalizeVolume, surname, titleSimilarity } from "./normalize";
-import type { LibraryRecord, MatchResult, ParsedCitation } from "./types";
+import type { LibraryRecord, MatchOutcome, MatchResult, ParsedCitation } from "./types";
 
 interface ScoredCandidate {
   record: LibraryRecord;
@@ -79,28 +79,32 @@ export class LibraryMatcher {
   }
 
   match(citation: ParsedCitation): MatchResult | undefined {
+    return this.matchWithOutcome(citation).match;
+  }
+
+  matchWithOutcome(citation: ParsedCitation): MatchOutcome {
     if (citation.doi) {
       const record = this.preferredIdentifierRecord(this.byDOI.get(citation.doi) || [], citation);
-      if (record) return { record, method: "doi", score: 1 };
+      if (record) return { match: { record, method: "doi", score: 1 }, ambiguous: false };
     }
     if (citation.arxiv) {
       const record = this.preferredIdentifierRecord(this.byArxiv.get(citation.arxiv) || [], citation);
-      if (record) return { record, method: "arxiv", score: 1 };
+      if (record) return { match: { record, method: "arxiv", score: 1 }, ambiguous: false };
     }
     const bibliographic = this.matchBibliographic(citation);
     if (bibliographic) return bibliographic;
-    if (!citation.normalizedTitle || citation.normalizedTitle.length < 12) return undefined;
+    if (!citation.normalizedTitle || citation.normalizedTitle.length < 12) return { ambiguous: false };
 
     const exact = (this.byTitle.get(citation.normalizedTitle) || [])
       .map(record => this.scoreCandidate(record, citation, true))
       .filter((candidate): candidate is ScoredCandidate => Boolean(candidate));
-    if (exact.length) return this.resolve(exact, "title-exact");
+    if (exact.length) return this.resolve(exact, "title-exact")!;
 
     const compactExact = (this.byCompactTitle.get(this.compact(citation.normalizedTitle)) || [])
       .filter(record => record.normalizedTitle !== citation.normalizedTitle)
       .map(record => this.scoreCandidate(record, citation, true))
       .filter((candidate): candidate is ScoredCandidate => Boolean(candidate));
-    if (compactExact.length) return this.resolve(compactExact, "title-exact");
+    if (compactExact.length) return this.resolve(compactExact, "title-exact")!;
 
     const records = new Set<LibraryRecord>();
     for (const token of this.tokens(citation.normalizedTitle)) {
@@ -110,10 +114,10 @@ export class LibraryMatcher {
       .filter(record => record.normalizedTitle !== citation.normalizedTitle)
       .map(record => this.scoreCandidate(record, citation, false))
       .filter((candidate): candidate is ScoredCandidate => Boolean(candidate));
-    return this.resolve(fuzzy, "title-fuzzy");
+    return this.resolve(fuzzy, "title-fuzzy") || { ambiguous: false };
   }
 
-  private matchBibliographic(citation: ParsedCitation): MatchResult | undefined {
+  private matchBibliographic(citation: ParsedCitation): MatchOutcome | undefined {
     if (citation.normalizedTitle || !citation.firstAuthor || !citation.year) return undefined;
     const candidates = this.byAuthorYear.get(this.authorYearKey(citation.firstAuthor, citation.year)) || [];
     const scored = candidates.flatMap(record => {
@@ -186,7 +190,7 @@ export class LibraryMatcher {
     return { authorMatch, yearMatch, containerMatch, itemTypeMatch };
   }
 
-  private resolve(candidates: ScoredCandidate[], method: MatchResult["method"]): MatchResult | undefined {
+  private resolve(candidates: ScoredCandidate[], method: MatchResult["method"]): MatchOutcome | undefined {
     candidates.sort((a, b) => b.score - a.score || a.record.item.id - b.record.item.id);
     let first = candidates[0];
     if (!first) return undefined;
@@ -195,13 +199,13 @@ export class LibraryMatcher {
       const tied = candidates.filter(candidate => first!.score - candidate.score < 0.06);
       const sameDOI = first.record.doi && tied.every(candidate => candidate.record.doi === first!.record.doi);
       const sameArxiv = first.record.arxiv && tied.every(candidate => candidate.record.arxiv === first!.record.arxiv);
-      if (!sameDOI && !sameArxiv) return undefined;
+      if (!sameDOI && !sameArxiv) return { ambiguous: true };
       first = tied.sort((a, b) =>
         Number(Boolean(b.record.pdfAttachmentID)) - Number(Boolean(a.record.pdfAttachmentID))
         || a.record.item.id - b.record.item.id
       )[0]!;
     }
-    return { record: first.record, method, score: Math.min(first.score, 0.99) };
+    return { match: { record: first.record, method, score: Math.min(first.score, 0.99) }, ambiguous: false };
   }
 
   private preferredIdentifierRecord(records: LibraryRecord[], citation: ParsedCitation): LibraryRecord | undefined {
