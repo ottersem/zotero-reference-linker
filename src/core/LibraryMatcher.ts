@@ -188,10 +188,19 @@ export class LibraryMatcher {
 
   private resolve(candidates: ScoredCandidate[], method: MatchResult["method"]): MatchResult | undefined {
     candidates.sort((a, b) => b.score - a.score || a.record.item.id - b.record.item.id);
-    const first = candidates[0];
+    let first = candidates[0];
     if (!first) return undefined;
     const second = candidates[1];
-    if (second && first.score - second.score < 0.06) return undefined;
+    if (second && first.score - second.score < 0.06) {
+      const tied = candidates.filter(candidate => first!.score - candidate.score < 0.06);
+      const sameDOI = first.record.doi && tied.every(candidate => candidate.record.doi === first!.record.doi);
+      const sameArxiv = first.record.arxiv && tied.every(candidate => candidate.record.arxiv === first!.record.arxiv);
+      if (!sameDOI && !sameArxiv) return undefined;
+      first = tied.sort((a, b) =>
+        Number(Boolean(b.record.pdfAttachmentID)) - Number(Boolean(a.record.pdfAttachmentID))
+        || a.record.item.id - b.record.item.id
+      )[0]!;
+    }
     return { record: first.record, method, score: Math.min(first.score, 0.99) };
   }
 

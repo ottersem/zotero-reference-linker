@@ -52,6 +52,13 @@ The plugin is not limited to specific journals. These formats have been tested:
 
 Other journals generally work when references contain a DOI, arXiv ID, title, or an unambiguous bibliographic fingerprint.
 
+## TODO
+
+- [ ] Add optional automatic scanning when a PDF opens or the reader reaches its references section.
+- [ ] Show a scan summary with the numbers of references scanned, matched, ambiguous, and unmatched.
+- [ ] Add actions for unmatched references, such as opening a DOI or publisher page and copying the title.
+- [ ] Optionally link matched papers through Zotero's Related Items, with an explicit bulk action and undo support.
+
 ## Development
 
 Requires Node.js 20 or newer.

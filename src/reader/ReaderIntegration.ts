@@ -129,8 +129,16 @@ export class ReaderIntegration {
       for (const [position, reference] of section.references.entries()) {
         const citation = this.parser.parse(reference);
         const match = matcher.match(citation);
-        if (!match || match.record.item.id === currentItemID) continue;
         const referenceKey = reference.index == null ? `reference:${position}` : `index:${reference.index}`;
+        if (!match) {
+          if (reference.index != null) {
+            state.overlay.renderIndexedUnmatched(reference.index, referenceKey);
+          } else {
+            state.overlay.renderTitleUnmatched(citation.title || reference.raw, referenceKey);
+          }
+          continue;
+        }
+        if (match.record.item.id === currentItemID) continue;
         const rendered = reference.index != null
           ? state.overlay.renderIndexed(reference.index, match, referenceKey)
           : state.overlay.renderTitle(citation.title || reference.raw, match, referenceKey);

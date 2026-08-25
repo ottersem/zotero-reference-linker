@@ -17,7 +17,7 @@ export interface PdfDocument {
 const REFERENCE_HEADING = /^\s*(?:\d{1,4}\s+)?(references|bibliography|works cited|literature cited|references cited)(?:\s+\d{1,4})?\s*$/i;
 const STOP_HEADING = /^\s*(?:\d{1,4}\s+)?(appendix|appendices|supplementary material|supplemental material|acknowledg(?:e)?ments?)(?:\s+\d{1,4})?\b/i;
 const LETTERED_STOP_HEADING = /^\s*A(?:\.\d+)?(?:\.\s*|\s+)(?=[\p{Lu}])[^,.;]{2,100}\s*$/u;
-const LABELED_START = /(?:^|\n)\s*(?:\[\s*((?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23})\s*\]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})[.)])\s+/g;
+const LABELED_START = /(?:^|\n)\s*(?:\[\s*((?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23})\s*\]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})[.)])(?:\s+|(?=\p{Lu}))/gu;
 const PARTICLE = `(?:[Dd]e|[Dd]el|[Dd]en|[Dd]er|[Dd]i|[Dd]u|[Ll]a|[Ll]e|[Vv]an|[Vv]on)\\s+`;
 const SURNAME = `(?:${PARTICLE}){0,3}[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+(?:\\s+[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+){0,2}`;
 const INITIALS = `(?:[A-Z](?:\\.-[A-Z])?\\.(?:\\s*[A-Z](?:\\.-[A-Z])?\\.){0,5}|[A-Z](?:-[A-Z])?(?=\\s*[,;]))`;
@@ -198,7 +198,24 @@ export class PdfSectionExtractor {
     const columnBases = recurringPositions
       .sort((a, b) => a - b)
       .filter(position => !recurringPositions.some(other => position - other >= 5 && position - other <= 24));
-    const hasColumns = columnBases.length >= 2 && columnBases.at(-1)! - columnBases[0]! >= 100;
+    const columnLines = columnBases.map(() => [] as number[]);
+    for (const value of lines) {
+      if (value.x == null || value.y == null || !columnBases.length) continue;
+      let best = 0;
+      for (let i = 1; i < columnBases.length; i++) {
+        if (Math.abs(value.x - columnBases[i]!) < Math.abs(value.x - columnBases[best]!)) best = i;
+      }
+      columnLines[best]!.push(value.y);
+    }
+    const alignedColumns = columnLines.some((left, leftIndex) => columnLines.some((right, rightIndex) => {
+      if (rightIndex <= leftIndex || columnBases[rightIndex]! - columnBases[leftIndex]! < 100) return false;
+      let aligned = 0;
+      for (const y of left) {
+        if (right.some(otherY => Math.abs(y - otherY) <= 20)) aligned++;
+      }
+      return aligned >= 2;
+    }));
+    const hasColumns = columnBases.length >= 2 && alignedColumns;
     const ordered = hasColumns ? [...lines].sort((a, b) => {
       const column = (value: typeof a) => {
         if (REFERENCE_HEADING.test(value.text)) return 0;
@@ -217,7 +234,7 @@ export class PdfSectionExtractor {
     return ordered.map(value => {
       if (value.x == null) return value.text;
       const indented = columnBases.some(position => value.x! - position >= 5 && value.x! - position <= 24);
-      const labeled = /^\s*(?:\[\s*[A-Za-z0-9][^\]]{0,24}\]|\d{1,4}[.)])\s+/.test(value.text);
+      const labeled = /^\s*(?:\[\s*[A-Za-z0-9][^\]]{0,24}\]|\d{1,4}[.)])(?:\s+|(?=\p{Lu}))/u.test(value.text);
       return indented && !labeled ? `${CONTINUATION_LINE}${value.text}` : value.text;
     });
   }

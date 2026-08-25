@@ -101,6 +101,16 @@ describe("PdfSectionExtractor", () => {
     expect(result?.references[1]?.raw).toContain("Chen, L.-C.");
   });
 
+  it("splits numbered MDPI references when PDF extraction omits the space after the marker", async () => {
+    const document = pdf([
+      "Body",
+      "References\n1.Mead, D. J. Wave Propagation and Natural Modes in Periodic Systems. J. Sound Vib. 1975, 40, 19-39.\n2.Sepahvand, K.; Marburg, S. Numerical solution of one-dimensional wave equation. J. Comput. Acoust. 2007, 15, 579-593."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(2);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2]);
+  });
+
   it("does not split a hanging-indent continuation author into a new reference", async () => {
     const document: PdfDocument = {
       numPages: 1,
@@ -136,6 +146,30 @@ describe("PdfSectionExtractor", () => {
     };
     const result = await new PdfSectionExtractor().extract(document);
     expect(result?.references.map(reference => reference.raw.split(",")[0])).toEqual(["Bell", "Black", "Elmegreen", "Flower"]);
+  });
+
+  it("does not mistake an indented pre-reference metadata block for a second column", async () => {
+    const document: PdfDocument = {
+      numPages: 2,
+      async getPage(pageNumber) {
+        const item = (str: string, x: number, y: number) => ({ str, hasEOL: true, transform: [1, 0, 0, 1, x, y] });
+        const pages = [
+          [
+            item("Funding: This research received no external funding.", 166, 760),
+            item("Data Availability Statement: All data are included.", 166, 741),
+            item("Acknowledgments: The authors thank their institution.", 166, 709),
+            item("References", 36, 651),
+            item("1. Mead, D. J. A useful paper title. Journal, 1975.", 36, 635),
+            item("2. Sepahvand, K. Another useful paper title. Journal, 2007.", 36, 610)
+          ],
+          [item("3. Gu, M. A third useful paper title. Journal, 2009.", 36, 760)]
+        ];
+        return { async getTextContent() { return { items: pages[pageNumber - 1]! }; } };
+      }
+    };
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references).toHaveLength(3);
+    expect(result?.endPage).toBe(1);
   });
 
   it("removes sequential PDF margin line numbers", async () => {

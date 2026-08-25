@@ -3,6 +3,16 @@
     "zotero-reference-linker@ottersem.github.io": {
       "updates": [
         {
+          "version": "0.9.6",
+          "update_link": "https://github.com/ottersem/zotero-reference-linker/releases/download/v0.9.6/zotero-reference-linker-0.9.6.xpi",
+          "applications": {
+            "zotero": {
+              "strict_min_version": "9.0",
+              "strict_max_version": "10.99.99"
+            }
+          }
+        },
+        {
           "version": "0.9.5",
           "update_link": "https://github.com/ottersem/zotero-reference-linker/releases/download/v0.9.5/zotero-reference-linker-0.9.5.xpi",
           "applications": {

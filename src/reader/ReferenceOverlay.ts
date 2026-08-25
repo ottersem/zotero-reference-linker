@@ -11,6 +11,13 @@ interface IndexedPage {
   compact: { text: string; offsets: number[] };
 }
 
+export function findIndexedReferenceMarkers(text: string): Array<{ index: number; start: number }> {
+  return [...text.matchAll(/\[\s*(\d{1,4})\s*\]|(?:^|\s)(\d{1,4})[.)](?=\s)/g)].map(match => ({
+    index: Number(match[1] || match[2]),
+    start: match.index! + (match[2] ? match[0].search(/\d/) : 0)
+  }));
+}
+
 export class ReferenceOverlay {
   private static readonly styleID = "reference-linker-style";
   private pages: IndexedPage[] = [];
@@ -34,7 +41,9 @@ export class ReferenceOverlay {
   }
 
   clear(): void {
-    this.doc.querySelectorAll(".reference-linker-hit").forEach(node => node.classList.remove("reference-linker-hit"));
+    this.doc.querySelectorAll(".reference-linker-hit, .reference-linker-unmatched").forEach(node => {
+      node.classList.remove("reference-linker-hit", "reference-linker-unmatched");
+    });
     this.doc.querySelectorAll(".reference-linker-badge").forEach(node => node.remove());
     this.hits = new WeakMap<Element, MatchResult>();
     this.claimedElements = new WeakSet<Element>();
@@ -45,7 +54,7 @@ export class ReferenceOverlay {
     return this.doc.querySelectorAll(".reference-linker-badge").length;
   }
 
-  render(reference: ReferenceBlock, match: MatchResult, referenceKey: string): boolean {
+  private render(reference: ReferenceBlock, match: MatchResult | undefined, referenceKey: string): boolean {
     if (this.renderedReferences.has(referenceKey)
       || reference.fragments.some(fragment => this.claimedElements.has(fragment.element))) return false;
     const anchor = reference.fragments.at(-1)?.element;
@@ -54,9 +63,12 @@ export class ReferenceOverlay {
 
     for (const fragment of reference.fragments) {
       this.claimedElements.add(fragment.element);
-      fragment.element.classList.add("reference-linker-hit");
-      this.hits.set(fragment.element, match);
+      fragment.element.classList.add(match ? "reference-linker-hit" : "reference-linker-unmatched");
+      if (match) this.hits.set(fragment.element, match);
     }
+
+    this.renderedReferences.add(referenceKey);
+    if (!match) return true;
 
     const pageRect = page.getBoundingClientRect();
     const rect = anchor.getBoundingClientRect();
@@ -73,7 +85,6 @@ export class ReferenceOverlay {
       this.onOpen(match);
     });
     page.append(badge);
-    this.renderedReferences.add(referenceKey);
     return true;
   }
 
@@ -113,13 +124,21 @@ export class ReferenceOverlay {
   }
 
   renderIndexed(index: number, match: MatchResult, referenceKey = `index:${index}`): boolean {
+    return this.renderIndexedReference(index, match, referenceKey);
+  }
+
+  renderIndexedUnmatched(index: number, referenceKey = `index:${index}`): boolean {
+    return this.renderIndexedReference(index, undefined, referenceKey);
+  }
+
+  private renderIndexedReference(index: number, match: MatchResult | undefined, referenceKey: string): boolean {
     for (const { text, offsets, spans, pageIndex, searchableStart, searchableEnd } of this.pages) {
-      const markers = [...text.matchAll(/\[\s*(\d{1,4})\s*\]/g)];
-      const markerIndex = markers.findIndex(marker => Number(marker[1]) === index);
+      const markers = findIndexedReferenceMarkers(text);
+      const markerIndex = markers.findIndex(marker => marker.index === index);
       if (markerIndex < 0) continue;
-      const start = markers[markerIndex]!.index!;
+      const start = markers[markerIndex]!.start;
       if (start < searchableStart || start >= searchableEnd) continue;
-      const end = Math.min(markers[markerIndex + 1]?.index ?? searchableEnd, searchableEnd);
+      const end = Math.min(markers[markerIndex + 1]?.start ?? searchableEnd, searchableEnd);
       const first = offsets.findIndex(offset => offset.end > start);
       let last = offsets.findIndex(offset => offset.start >= end);
       if (first < 0) continue;
@@ -132,6 +151,14 @@ export class ReferenceOverlay {
   }
 
   renderTitle(title: string, match: MatchResult, referenceKey = `title:${title}`): boolean {
+    return this.renderTitleReference(title, match, referenceKey);
+  }
+
+  renderTitleUnmatched(title: string, referenceKey = `title:${title}`): boolean {
+    return this.renderTitleReference(title, undefined, referenceKey);
+  }
+
+  private renderTitleReference(title: string, match: MatchResult | undefined, referenceKey: string): boolean {
     const target = this.compactText(title).text;
     if (target.length < 12) return false;
     for (const { compact, searchableStart, offsets, spans, pageIndex } of this.pages) {
@@ -190,6 +217,7 @@ export class ReferenceOverlay {
     style.id = ReferenceOverlay.styleID;
     style.textContent = `
       .reference-linker-hit { background: rgba(255, 210, 40, .34) !important; border-radius: 2px; cursor: pointer; }
+      .reference-linker-unmatched { background: rgba(110, 118, 126, .45) !important; border-radius: 2px; }
       .reference-linker-badge { position: absolute; z-index: 50; border: 1px solid rgba(90,70,0,.35); border-radius: 4px; padding: 1px 5px; background: #fff3a6; color: #342b00; font: 600 10px/16px system-ui, sans-serif; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
       .reference-linker-badge:hover { background: #ffe35c; }
     `;

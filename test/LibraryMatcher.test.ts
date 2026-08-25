@@ -130,6 +130,16 @@ describe("LibraryMatcher", () => {
     expect(matcher.match(citation("A Shared Research Title"))).toBeUndefined();
   });
 
+  it("prefers the PDF-bearing copy when exact-title duplicates share a DOI", async () => {
+    const title = "Wave Propagation and Natural Modes in Periodic Systems: II. Multi-Coupled Systems, With and Without Damping";
+    const matcher = await indexed([
+      { id: 1, title, author: "Mead", year: 1975, doi: "10.1016/S0022-460X(75)80228-8" },
+      { id: 2, title, author: "Mead", year: 1975, doi: "10.1016/S0022-460X(75)80228-8", pdf: true }
+    ]);
+    const result = matcher.match(citation(title, { firstAuthor: "mead", year: 1975 }));
+    expect(result?.record.item.id).toBe(2);
+  });
+
   it("distinguishes a book section from a same-title book", async () => {
     const matcher = await indexed([
       { id: 1, title: "A Shared Chapter Title", author: "Kim", year: 2022, itemType: "bookSection", bookTitle: "Collected Research Methods" },

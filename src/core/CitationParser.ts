@@ -163,7 +163,10 @@ export class CitationParser {
       const prefix = citation.slice(0, boundary.index);
       if (!this.looksLikeAuthors(prefix)) continue;
       const remainder = citation.slice(boundary.index! + boundary[0].length);
-      const candidate = this.clean(remainder.split(/\.\s+(?=[A-ZÀ-ÖØ-Þ\d]|arXiv\b|doi\b|https?:)/u)[0] || "");
+      const segments = remainder.split(/\.\s+(?=[A-ZÀ-ÖØ-Þ\d]|arXiv\b|doi\b|https?:)/u);
+      let title = segments[0] || "";
+      if (/:\s*[IVXLCDM]+$/i.test(title) && segments[1]) title += `. ${segments[1]}`;
+      const candidate = this.clean(title);
       const words = candidate.split(/\s+/).filter(Boolean).length;
       if (words < 2 || words > 40 || (words === 2 && normalizeTitle(candidate).length < 12) || this.looksLikeAuthors(candidate)) continue;
       if (/^(?:[A-ZÀ-ÖØ-Þ]\.\s*|\(?\s*(?:19|20)\d{2})/u.test(candidate)) continue;

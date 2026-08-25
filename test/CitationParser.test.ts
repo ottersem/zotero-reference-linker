@@ -147,6 +147,13 @@ describe("CitationParser", () => {
     expect(result.year).toBe(2006);
   });
 
+  it("keeps a roman-numbered subtitle as part of an MDPI reference title", () => {
+    const result = parser.parse(block("1. Mead, D.J. Wave Propagation and Natural Modes in Periodic Systems: II. Multi-Coupled Systems, With and Without Damping. J. Sound Vib. 1975, 40, 19–39."));
+    expect(result.normalizedTitle).toBe("wave propagation and natural modes in periodic systems ii multi coupled systems with and without damping");
+    expect(result.firstAuthor).toBe("mead");
+    expect(result.year).toBe(1975);
+  });
+
   it("parses a Vancouver biomedical reference", () => {
     const result = parser.parse(block("Smith JA, Doe B. Biomarkers improve early disease detection in adults. J Med. 2020;12(3):100-110."));
     expect(result.firstAuthor).toBe("smith");
