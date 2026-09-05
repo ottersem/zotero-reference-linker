@@ -58,7 +58,14 @@ describe("unmatchedReferenceActions", () => {
     ]);
   });
 
-  it("does not offer unavailable actions", () => {
-    expect(unmatchedReferenceActions({ raw: "Unparsed reference" })).toEqual([]);
+  it("falls back to searching and copying the full reference when no title is available", () => {
+    expect(unmatchedReferenceActions({ raw: "Author, Journal 10, 20–30 (2024)." })).toEqual([
+      { kind: "open", label: "Search", value: "https://scholar.google.com/scholar?q=Author%2C%20Journal%2010%2C%2020%E2%80%9330%20(2024)." },
+      { kind: "copy", label: "Copy reference", value: "Author, Journal 10, 20–30 (2024)." }
+    ]);
+  });
+
+  it("does not offer actions for an empty reference", () => {
+    expect(unmatchedReferenceActions({ raw: "  " })).toEqual([]);
   });
 });

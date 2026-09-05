@@ -22,7 +22,7 @@ Zotero 9 and 10 are supported.
 Open a PDF. Reference Linker scans automatically as reader pages are rendered. Click **Ref ↗** to force a manual rescan; the button shows **Scanning…** while it runs and the result appears in the summary at the right edge of the reader.
 
 - Yellow references are matched to your library. `↗ PDF` opens the saved PDF, while `↗ Item` selects an item without an attached PDF.
-- Gray references are unmatched. Click one to open its DOI, search Google Scholar, or copy its title when that metadata is available.
+- Gray references are unmatched. Click one to open its DOI, search Google Scholar, or copy its title. When no title can be extracted, search and copy actions use the full reference text instead.
 - The scan summary reports scanned, matched, ambiguous, and unmatched reference counts.
 
 If no links appear, scroll through the reference pages once. Zotero renders only nearby PDF pages, and Reference Linker rescans when newly rendered pages are detected.

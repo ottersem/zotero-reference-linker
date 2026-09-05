@@ -2,18 +2,23 @@ import type { MatchResult, ParsedCitation, ReferenceBlock } from "../core/types"
 
 export type UnmatchedReferenceAction =
   | { kind: "open"; label: "Open DOI" | "Search"; value: string }
-  | { kind: "copy"; label: "Copy title"; value: string };
+  | { kind: "copy"; label: "Copy title" | "Copy reference"; value: string };
 
 export function unmatchedReferenceActions(citation: ParsedCitation): UnmatchedReferenceAction[] {
   const actions: UnmatchedReferenceAction[] = [];
   if (citation.doi) actions.push({ kind: "open", label: "Open DOI", value: `https://doi.org/${citation.doi}` });
-  if (citation.title) {
+  const searchText = citation.title || citation.raw.trim();
+  if (searchText) {
     actions.push({
       kind: "open",
       label: "Search",
-      value: `https://scholar.google.com/scholar?q=${encodeURIComponent(citation.title)}`
+      value: `https://scholar.google.com/scholar?q=${encodeURIComponent(searchText)}`
     });
-    actions.push({ kind: "copy", label: "Copy title", value: citation.title });
+    actions.push({
+      kind: "copy",
+      label: citation.title ? "Copy title" : "Copy reference",
+      value: searchText
+    });
   }
   return actions;
 }
@@ -71,7 +76,7 @@ export class ReferenceOverlay {
     private readonly doc: Document,
     private readonly onOpen: (match: MatchResult) => void,
     private readonly onOpenURL: (url: string) => void = url => { doc.defaultView?.open(url, "_blank", "noopener"); },
-    private readonly onCopyTitle?: (title: string) => void | Promise<void>
+    private readonly onCopyText?: (text: string) => void | Promise<void>
   ) {
     this.installStyle();
     this.doc.addEventListener("click", this.clickHandler, true);
@@ -271,7 +276,7 @@ export class ReferenceOverlay {
           this.onOpenURL(action.value);
           this.closeMenu();
         } else {
-          const copying = this.onCopyTitle ? this.onCopyTitle(action.value) : this.copyTitle(action.value);
+          const copying = this.onCopyText ? this.onCopyText(action.value) : this.copyText(action.value);
           void Promise.resolve(copying).then(() => this.closeMenu(), () => this.closeMenu());
         }
       });
@@ -292,11 +297,11 @@ export class ReferenceOverlay {
     this.menu = undefined;
   }
 
-  private copyTitle(title: string): void | Promise<void> {
+  private copyText(text: string): void | Promise<void> {
     const clipboard = this.doc.defaultView?.navigator.clipboard;
-    if (clipboard) return clipboard.writeText(title);
+    if (clipboard) return clipboard.writeText(text);
     const textarea = this.doc.createElement("textarea");
-    textarea.value = title;
+    textarea.value = text;
     textarea.style.position = "fixed";
     textarea.style.opacity = "0";
     (this.doc.body || this.doc.documentElement).append(textarea);
