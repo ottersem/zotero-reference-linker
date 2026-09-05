@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Reference Linker",
-  "version": "0.9.6",
+  "version": "0.9.7",
   "icons": {
     "48": "icon.png",
     "96": "icon@2x.png"
