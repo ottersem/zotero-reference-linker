@@ -54,15 +54,14 @@ export class ReaderIntegration {
       button.textContent = "Scanning…";
       button.disabled = true;
       try {
-        const result = await this.scan(reader, true, true);
-        button.textContent = result == null ? "No refs" : `${result} linked`;
+        await this.scan(reader, true, true);
       } catch (error) {
         this.zotero.logError(error);
-        button.textContent = "Scan error";
         button.title = error instanceof Error ? error.message : String(error);
+      } finally {
+        button.textContent = original;
+        button.disabled = false;
       }
-      button.disabled = false;
-      reader._iframeWindow?.setTimeout(() => { button.textContent = original; }, 2500);
     });
     append(button);
     const summary = this.createSummary(doc, button);
@@ -131,7 +130,11 @@ export class ReaderIntegration {
       const matcher = await this.getMatcher(attachment.libraryID);
       if (!state.overlay || state.overlayDocument !== doc) {
         state.overlay?.destroy();
-        state.overlay = new ReferenceOverlay(doc, match => void this.open(match.record.item.id, match.record.pdfAttachmentID));
+        state.overlay = new ReferenceOverlay(
+          doc,
+          match => void this.open(match.record.item.id, match.record.pdfAttachmentID),
+          url => this.zotero.launchURL(url)
+        );
         state.overlayDocument = doc;
       }
       state.overlay.clear();
@@ -148,9 +151,9 @@ export class ReaderIntegration {
           if (outcome.ambiguous) ambiguousItems++;
           else unmatchedItems++;
           if (reference.index != null) {
-            state.overlay.renderIndexedUnmatched(reference.index, referenceKey);
+            state.overlay.renderIndexedUnmatched(reference.index, citation, referenceKey);
           } else {
-            state.overlay.renderTitleUnmatched(citation.title || reference.raw, referenceKey);
+            state.overlay.renderTitleUnmatched(citation.title || reference.raw, citation, referenceKey);
           }
           continue;
         }
@@ -194,7 +197,7 @@ export class ReaderIntegration {
     style.id = "reference-linker-toolbar-style";
     style.textContent = `
       .reference-linker-summary {
-        position: fixed; right: 8px; z-index: 1000; display: none; min-width: 128px;
+        position: fixed; right: 0; z-index: 1000; display: none; min-width: 128px;
         box-sizing: border-box; padding: 8px 10px; border-radius: 6px;
         background: rgba(24, 119, 242, .5); color: white;
         font: 600 12px/1.55 system-ui, sans-serif; white-space: pre;
@@ -212,7 +215,7 @@ export class ReaderIntegration {
     const position = () => {
       const rect = button.getBoundingClientRect();
       summary.style.top = `${rect.bottom + 6}px`;
-      summary.style.right = "8px";
+      summary.style.right = "0";
     };
     position();
     return summary;
@@ -289,8 +292,8 @@ export class ReaderIntegration {
   private isOwnNode(node: Node): boolean {
     if (node.nodeType !== 1) return false;
     const element = node as Element;
-    return element.matches(".reference-linker-badge, #reference-linker-style")
-      || Boolean(element.closest(".reference-linker-badge"));
+    return element.matches(".reference-linker-badge, .reference-linker-menu, #reference-linker-style")
+      || Boolean(element.closest(".reference-linker-badge, .reference-linker-menu"));
   }
 
   private getAttachment(reader: ZoteroReader): ZoteroItem | undefined {

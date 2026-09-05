@@ -23,6 +23,7 @@ interface ZoteroReader {
 interface ZoteroAPI {
   debug(message: unknown, level?: number): void;
   logError(error: unknown): void;
+  launchURL(url: string): void;
   getMainWindow(): Window & { ZoteroPane?: { viewAttachment(id: number): Promise<void> | void; selectItem(id: number): Promise<void> | void } };
   Items: {
     get(id: number): ZoteroItem | false;

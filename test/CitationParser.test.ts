@@ -95,6 +95,13 @@ describe("CitationParser", () => {
     expect(result.normalizedTitle).toBe("stacked denoising autoencoders learning useful representations in a deep network");
   });
 
+  it("does not treat a middle initial in a full-name author list as the title boundary", () => {
+    const result = parser.parse(block("[17] Minchul Kim, Anil K. Jain, and Xiaoming Liu. AdaFace: Quality adaptive margin for face recognition. In CVPR, 2022. 2, 4, 6"));
+    expect(result.firstAuthor).toBe("kim");
+    expect(result.year).toBe(2022);
+    expect(result.normalizedTitle).toBe("adaface quality adaptive margin for face recognition");
+  });
+
   it("accepts a short but distinctive two-word title", () => {
     const result = parser.parse(block("Kirillov, A., Mintun, E., Ravi, N., and Girshick, R. Segment anything. In Proceedings of the IEEE/CVF International Conference on Computer Vision, 2023."));
     expect(result.normalizedTitle).toBe("segment anything");
@@ -138,6 +145,13 @@ describe("CitationParser", () => {
       volume: "17",
       pages: "891"
     });
+  });
+
+  it("parses a bare superscript-style AIP citation marker", () => {
+    const result = parser.parse(block("12 E. A. Cohen, “Some effects of inharmonic partials on interval perception,” Music Percept. 1, 323–349 (1984)."));
+    expect(result.firstAuthor).toBe("cohen");
+    expect(result.year).toBe(1984);
+    expect(result.normalizedTitle).toBe("some effects of inharmonic partials on interval perception");
   });
 
   it("parses a comma-delimited mathematics title", () => {

@@ -2,7 +2,7 @@ import { normalizeArxiv, normalizeContainerTitle, normalizeDOI, normalizeLocator
 import type { ParsedCitation, ReferenceBlock } from "./types";
 
 const YEAR = /\b(19\d{2}|20\d{2})[a-z]?\b/i;
-const CITATION_MARKER = /^\s*(?:\[\s*(?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23}\s*\]|\d+[.)])\s*/;
+const CITATION_MARKER = /^\s*(?:\[\s*(?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23}\s*\]|\d+[.)]|\d+(?=\s+(?:[A-ZÀ-ÖØ-Þ](?:\.|\s)|Technical\b)))\s*/u;
 const FULL_NAME_WORD = `(?:[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+|[A-ZÀ-ÖØ-Þ]\\.?)`;
 const FULL_NAME = `[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+(?:\\s+${FULL_NAME_WORD}){1,4}`;
 const INITIALS_AUTHOR = `(?:[A-ZÀ-ÖØ-Þ](?:-[A-ZÀ-ÖØ-Þ])?\\.\\s*){1,5}(?:(?:de|del|den|der|di|du|la|le|van|von)\\s+){0,3}[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+`;
@@ -161,8 +161,10 @@ export class CitationParser {
   private extractAfterAuthors(citation: string): string | undefined {
     for (const boundary of citation.matchAll(/\.\s+(?=[A-ZÀ-ÖØ-Þ\d])/gu)) {
       const prefix = citation.slice(0, boundary.index);
-      if (!this.looksLikeAuthors(prefix)) continue;
       const remainder = citation.slice(boundary.index! + boundary[0].length);
+      if (/\b[A-ZÀ-ÖØ-Þ]\s*$/u.test(prefix)
+        && /^[A-ZÀ-ÖØ-Þ][\p{L}'’-]+(?:\s*,|\s+(?:and|&)\b)/u.test(remainder)) continue;
+      if (!this.looksLikeAuthors(prefix)) continue;
       const segments = remainder.split(/\.\s+(?=[A-ZÀ-ÖØ-Þ\d]|arXiv\b|doi\b|https?:)/u);
       let title = segments[0] || "";
       if (/:\s*[IVXLCDM]+$/i.test(title) && segments[1]) title += `. ${segments[1]}`;

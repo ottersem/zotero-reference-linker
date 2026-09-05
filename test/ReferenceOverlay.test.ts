@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findIndexedReferenceMarkers, ReferenceOverlay } from "../src/reader/ReferenceOverlay";
+import { findIndexedReferenceMarkers, ReferenceOverlay, unmatchedReferenceActions } from "../src/reader/ReferenceOverlay";
 
 describe("findIndexedReferenceMarkers", () => {
   it("finds bracketed and plain numbered reference markers", () => {
@@ -42,5 +42,23 @@ describe("findIndexedReferenceMarkers", () => {
     expect(overlay.renderIndexedUnmatched(1)).toBe(true);
     expect(classes.every(values => values.has("reference-linker-unmatched"))).toBe(true);
     expect(style.textContent).toContain(".reference-linker-unmatched");
+  });
+});
+
+describe("unmatchedReferenceActions", () => {
+  it("offers DOI, Scholar search, and title copy when metadata is available", () => {
+    expect(unmatchedReferenceActions({
+      raw: "Example reference",
+      doi: "10.1234/example",
+      title: "A useful paper title"
+    })).toEqual([
+      { kind: "open", label: "Open DOI", value: "https://doi.org/10.1234/example" },
+      { kind: "open", label: "Search", value: "https://scholar.google.com/scholar?q=A%20useful%20paper%20title" },
+      { kind: "copy", label: "Copy title", value: "A useful paper title" }
+    ]);
+  });
+
+  it("does not offer unavailable actions", () => {
+    expect(unmatchedReferenceActions({ raw: "Unparsed reference" })).toEqual([]);
   });
 });

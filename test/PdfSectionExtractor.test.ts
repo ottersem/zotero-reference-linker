@@ -148,6 +148,37 @@ describe("PdfSectionExtractor", () => {
     expect(result?.references.map(reference => reference.raw.split(",")[0])).toEqual(["Bell", "Black", "Elmegreen", "Flower"]);
   });
 
+  it("keeps right-aligned one- and two-digit labels in the same column", async () => {
+    const document: PdfDocument = {
+      numPages: 1,
+      async getPage() {
+        const item = (str: string, x: number, y: number) => ({ str, hasEOL: true, transform: [1, 0, 0, 1, x, y] });
+        const reference = (number: number, x: number, y: number) => item(
+          `[${number}] A. Author, Useful reference title number ${number}. Journal ${number} (2024) ${number}-${number + 1}.`, x, y
+        );
+        return { async getTextContent() { return { items: [
+          item("References", 40, 760),
+          ...Array.from({ length: 11 }, (_, index) => reference(index + 1, index < 9 ? 44 : 40, 740 - index * 20)),
+          reference(12, 330, 740),
+          reference(13, 330, 720)
+        ] }; } };
+      }
+    };
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.references.map(reference => reference.index)).toEqual(Array.from({ length: 13 }, (_, index) => index + 1));
+  });
+
+  it("finds a headingless AIP list with bare superscript-style numbers", async () => {
+    const document = pdf([
+      "Article body without a references heading.\n1 T. Rossing, The Science of String Instruments (Springer, New York, 2016).\n2 N. Fletcher, The Physics of Musical Instruments (Springer, New York, 1998).\n3 R. Young, A useful paper title, Journal 24, 267-273 (1952).",
+      "4 H. Fletcher, Another useful paper title, Journal 34, 749-761 (1962).\n5 B. Anderson, A third useful paper title, Journal 117, 3268-3272 (2005)."
+    ]);
+    const result = await new PdfSectionExtractor().extract(document);
+    expect(result?.startPage).toBe(0);
+    expect(result?.references).toHaveLength(5);
+    expect(result?.references.map(reference => reference.index)).toEqual([1, 2, 3, 4, 5]);
+  });
+
   it("does not mistake an indented pre-reference metadata block for a second column", async () => {
     const document: PdfDocument = {
       numPages: 2,

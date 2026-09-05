@@ -18,7 +18,7 @@ const REFERENCE_HEADING = /^\s*(?:\d{1,4}\s+)?(references|bibliography|works cit
 const STOP_HEADING = /^\s*(?:\d{1,4}\s+)?(appendix|appendices|supplementary material|supplemental material|acknowledg(?:e)?ments?)(?:\s+\d{1,4})?\b/i;
 const ACKNOWLEDGEMENT_HEADING = /^\s*(?:\d{1,4}\s+)?acknowledg(?:e)?ments?(?:\s+\d{1,4})?\s*$/i;
 const LETTERED_STOP_HEADING = /^\s*A(?:\.\d+)?(?:\.\s*|\s+)(?=[\p{Lu}])[^,.;]{2,100}\s*$/u;
-const LABELED_START = /(?:^|\n)\s*(?:\[\s*((?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23})\s*\]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})[.)])(?:\s+|(?=\p{Lu}))/gu;
+const LABELED_START = /(?:^|\n)\s*(?:\[\s*((?=[^\]\n]{0,24}\d)[A-Za-z0-9][A-Za-z0-9+.:/_\-\s]{0,23})\s*\]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})[.)]|((?!(?:18|19|20|21)\d{2}\b)\d{1,4})(?=\s+(?:[A-ZÀ-ÖØ-Þ](?:\.|\s)|Technical\b)))(?:\s+|(?=\p{Lu}))/gu;
 const PARTICLE = `(?:[Dd]e|[Dd]el|[Dd]en|[Dd]er|[Dd]i|[Dd]u|[Ll]a|[Ll]e|[Vv]an|[Vv]on)\\s+`;
 const SURNAME = `(?:${PARTICLE}){0,3}[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+(?:\\s+[A-ZÀ-ÖØ-Þ][\\p{L}'’-]+){0,2}`;
 const INITIALS = `(?:[A-Z](?:\\.-[A-Z])?\\.(?:\\s*[A-Z](?:\\.-[A-Z])?\\.){0,5}|[A-Z](?:-[A-Z])?(?=\\s*[,;]))`;
@@ -48,7 +48,11 @@ export class PdfSectionExtractor {
       return section;
     }
     const scanned = await this.findByHeadings(pdf);
-    if (!scanned) return undefined;
+    if (!scanned) {
+      const headingless = await this.findByNumberedReferences(pdf);
+      if (!headingless) return undefined;
+      return this.extractRange(pdf, headingless.startPage, pdf.numPages - 1, "heading-scan", headingless.startLine);
+    }
     const section = await this.extractRange(pdf, scanned.startPage, scanned.endPage, "heading-scan", scanned.startLine, scanned.endLine);
     section.startHeading = "References";
     return section;
@@ -92,6 +96,27 @@ export class PdfSectionExtractor {
       if (stopLine >= 0) return { ...found, endPage: pageIndex, endLine: stopLine };
     }
     return found ? { ...found, endPage: pdf.numPages - 1 } : undefined;
+  }
+
+  private async findByNumberedReferences(pdf: PdfDocument): Promise<{ startPage: number; startLine: number } | undefined> {
+    for (let pageIndex = 0; pageIndex < pdf.numPages; pageIndex++) {
+      const lines = await this.pageLines(pdf, pageIndex);
+      for (let startLine = 0; startLine < lines.length; startLine++) {
+        if (!/^\s*1(?=\s+(?:[A-ZÀ-ÖØ-Þ](?:\.|\s)|Technical\b))/u.test(this.visibleLine(lines[startLine]!))) continue;
+        const samplePages = [lines.slice(startLine).join("\n")];
+        for (let nextPage = pageIndex + 1; nextPage < Math.min(pdf.numPages, pageIndex + 3); nextPage++) {
+          samplePages.push((await this.pageLines(pdf, nextPage)).join("\n"));
+        }
+        const references = this.splitReferences(samplePages.join("\n"));
+        if (references.length < 5) continue;
+        const firstFive = references.slice(0, 5);
+        if (firstFive.every((reference, index) => reference.index === index + 1)
+          && firstFive.filter(reference => /\b(?:18|19|20|21)\d{2}\b/.test(reference.raw)).length >= 3) {
+          return { startPage: pageIndex, startLine };
+        }
+      }
+    }
+    return undefined;
   }
 
   private async extractRange(
@@ -222,7 +247,7 @@ export class PdfSectionExtractor {
     }
     const columnBases = recurringPositions
       .sort((a, b) => a - b)
-      .filter(position => !recurringPositions.some(other => position - other >= 5 && position - other <= 24));
+      .filter(position => !recurringPositions.some(other => position > other && position - other <= 32));
     const columnLines = columnBases.map(() => [] as number[]);
     for (const value of lines) {
       if (value.x == null || value.y == null || !columnBases.length) continue;
@@ -267,7 +292,7 @@ export class PdfSectionExtractor {
     return ordered.flatMap(value => {
       let line = value.text;
       if (value.x != null) {
-        const indented = columnBases.some(position => value.x! - position >= 5 && value.x! - position <= 24);
+        const indented = columnBases.some(position => value.x! - position >= 5 && value.x! - position <= 36);
         const labeled = /^\s*(?:\[\s*[A-Za-z0-9][^\]]{0,24}\]|\d{1,4}[.)])(?:\s+|(?=\p{Lu}))/u.test(value.text);
         if (indented && !labeled) line = `${CONTINUATION_LINE}${line}`;
       }
@@ -299,16 +324,17 @@ export class PdfSectionExtractor {
     const labeledStarts = this.plausibleLabeledStarts(starts);
     if (labeledStarts.length >= 2) {
       const final = labeledStarts.at(-1)!;
-      const finalNumber = Number(final[1] || final[2]);
+      const finalNumber = Number(this.label(final));
       const numberingReset = Number.isFinite(finalNumber) ? starts.find(match => {
         if (match.index! <= final.index!) return false;
-        const value = /^\d+$/.test(match[1] || match[2] || "") ? Number(match[1] || match[2]) : undefined;
+        const label = this.label(match);
+        const value = /^\d+$/.test(label) ? Number(label) : undefined;
         return value != null && value <= finalNumber;
       }) : undefined;
       return labeledStarts.map((match, i) => ({
         raw: this.visibleLine(text.slice(match.index!, labeledStarts[i + 1]?.index ?? numberingReset?.index ?? text.length)).trim(),
         fragments: [],
-        index: /^\d+$/.test(match[1] || match[2] || "") ? Number(match[1] || match[2]) : undefined
+        index: /^\d+$/.test(this.label(match)) ? Number(this.label(match)) : undefined
       })).filter(block => block.raw.length >= 20);
     }
     const indices = [...new Set([
@@ -329,7 +355,7 @@ export class PdfSectionExtractor {
 
   private plausibleLabeledStarts(starts: RegExpMatchArray[]): RegExpMatchArray[] {
     if (starts.length < 2) return [];
-    const numeric = starts.map(match => /^\d+$/.test(match[1] || match[2] || "") ? Number(match[1] || match[2]) : undefined);
+    const numeric = starts.map(match => /^\d+$/.test(this.label(match)) ? Number(this.label(match)) : undefined);
     if (!numeric.some(value => value != null)) return starts;
     const accepted: RegExpMatchArray[] = [];
     let expected = 1;
@@ -339,6 +365,10 @@ export class PdfSectionExtractor {
       expected++;
     }
     return accepted.length >= 2 ? accepted : [];
+  }
+
+  private label(match: RegExpMatchArray): string {
+    return match[1] || match[2] || match[3] || "";
   }
 
   private referenceFirstAuthor(raw: string): string | undefined {
