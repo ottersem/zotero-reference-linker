@@ -1,22 +1,23 @@
 import type { MatchResult, ParsedCitation, ReferenceBlock } from "../core/types";
+import { uiText } from "./uiText";
 
 export type UnmatchedReferenceAction =
-  | { kind: "open"; label: "Open DOI" | "Search"; value: string }
-  | { kind: "copy"; label: "Copy title" | "Copy reference"; value: string };
+  | { kind: "open"; label: string; value: string }
+  | { kind: "copy"; label: string; value: string };
 
 export function unmatchedReferenceActions(citation: ParsedCitation): UnmatchedReferenceAction[] {
   const actions: UnmatchedReferenceAction[] = [];
-  if (citation.doi) actions.push({ kind: "open", label: "Open DOI", value: `https://doi.org/${citation.doi}` });
+  if (citation.doi) actions.push({ kind: "open", label: uiText("Open DOI", "Otvori DOI"), value: `https://doi.org/${citation.doi}` });
   const searchText = citation.title || citation.raw.trim();
   if (searchText) {
     actions.push({
       kind: "open",
-      label: "Search",
+      label: uiText("Search", "Pretraži"),
       value: `https://scholar.google.com/scholar?q=${encodeURIComponent(searchText)}`
     });
     actions.push({
       kind: "copy",
-      label: citation.title ? "Copy title" : "Copy reference",
+      label: citation.title ? uiText("Copy title", "Kopiraj naslov") : uiText("Copy reference", "Kopiraj referencu"),
       value: searchText
     });
   }
@@ -123,8 +124,8 @@ export class ReferenceOverlay {
     const badge = this.doc.createElement("button");
     badge.className = "reference-linker-badge";
     badge.type = "button";
-    badge.textContent = match.record.pdfAttachmentID ? "↗ PDF" : "↗ Item";
-    badge.title = `${match.record.title}\nMatched by ${match.method}`;
+    badge.textContent = match.record.pdfAttachmentID ? "↗ PDF" : uiText("↗ Item", "↗ Stavka");
+    badge.title = `${match.record.title}\n${uiText("Matched by", "Povezano prema")} ${match.method}`;
     badge.style.left = `${Math.min(rect.right - pageRect.left + 6, pageRect.width - 54)}px`;
     badge.style.top = `${rect.top - pageRect.top}px`;
     badge.addEventListener("click", event => {

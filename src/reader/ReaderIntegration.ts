@@ -3,6 +3,7 @@ import { LibraryMatcher } from "../core/LibraryMatcher";
 import { PdfSectionExtractor, type PdfDocument } from "../core/PdfSectionExtractor";
 import type { ReferenceSection } from "../core/types";
 import { ReferenceOverlay } from "./ReferenceOverlay";
+import { uiText } from "./uiText";
 
 interface ReaderState {
   outerObserver?: MutationObserver;
@@ -45,13 +46,13 @@ export class ReaderIntegration {
     const button = doc.createElement("button");
     button.type = "button";
     button.className = "toolbar-button";
-    button.title = "Scan References and link items in your library";
-    button.setAttribute("aria-label", "Link library references");
-    button.textContent = "Ref ↗";
+    button.title = uiText("Scan References and link items in your library", "Pronađi reference u PDF-u i poveži stavke iz biblioteke");
+    button.setAttribute("aria-label", uiText("Link library references", "Poveži reference sa stavkama u biblioteci"));
+    button.textContent = uiText("Ref ↗", "Veze ↗");
     this.installToolbarStyle(doc);
     button.addEventListener("click", async () => {
       const original = button.textContent;
-      button.textContent = "Scanning…";
+      button.textContent = uiText("Scanning…", "Provera…");
       button.disabled = true;
       try {
         await this.scan(reader, true, true);
@@ -223,7 +224,7 @@ export class ReaderIntegration {
 
   private updateSummary(state: ReaderState, counts: { scanned: number; matched: number; ambiguous: number; unmatched: number }): void {
     if (!state.summary) return;
-    state.summary.textContent = `scanned : ${counts.scanned}\nmatched : ${counts.matched}\nambiguous : ${counts.ambiguous}\nunmatched : ${counts.unmatched}`;
+    state.summary.textContent = `${uiText("scanned", "pregledano")} : ${counts.scanned}\n${uiText("matched", "povezano")} : ${counts.matched}\n${uiText("ambiguous", "višeznačno")} : ${counts.ambiguous}\n${uiText("unmatched", "nepovezano")} : ${counts.unmatched}`;
     state.summary.style.display = "block";
     const summary = state.summary;
     const win = summary.ownerDocument.defaultView;
